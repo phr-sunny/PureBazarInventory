@@ -101,7 +101,7 @@ async function seedDatabase() {
   })));
 
   await Location.ensureCentralWarehouse();
-  const demoOutlet = await Location.findOneAndUpdate(
+  await Location.findOneAndUpdate(
     { type: 'OUTLET', name: 'Demo Outlet' },
     {
       $set: { isActive: true, isPrimary: true },
@@ -109,16 +109,6 @@ async function seedDatabase() {
     },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
   );
-  const cashierRoles = await Role.find({ name: { $in: ['Cashier', 'Outlet Cashier'] } })
-    .select('_id')
-    .lean();
-  if (cashierRoles.length) {
-    await User.updateMany({
-      roleId: { $in: cashierRoles.map(({ _id }) => _id) },
-      $or: [{ locationId: { $exists: false } }, { locationId: null }],
-    }, { $set: { locationId: demoOutlet._id } });
-  }
-
   await Settings.updateOne(
     { singleton: 'global' },
     { $setOnInsert: SETTINGS_SEED },

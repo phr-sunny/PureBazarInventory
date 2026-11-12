@@ -89,4 +89,20 @@ describe('auth endpoints', () => {
     expect(loggedOut.status).toBe(200);
     expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'LOGOUT', actorId: user._id }));
   });
+
+  it('includes the assigned location details in login and current user profiles', async () => {
+    const location = { _id: '65b000000000000000000003', name: 'Outlet One', type: 'OUTLET' };
+    const assignedUser = { ...user, roleId: { name: 'Team', permissions: [] }, locationId: location };
+    User.findOne.mockReturnValue({ select: jest.fn().mockReturnValue({ populate: jest.fn().mockResolvedValue(assignedUser) }) });
+    User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue(assignedUser) });
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: user.email, password: 'correct-password' });
+    const profile = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${login.body.token}`);
+    for (const result of [login.body.user, profile.body.user]) {
+      expect(result).toMatchObject({
+        locationId: location._id, location: { id: location._id, name: location.name, type: location.type },
+        isLocationLocked: true,
+      });
+    }
+  });
 });

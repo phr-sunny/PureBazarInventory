@@ -31,6 +31,8 @@ const roleFields = [
     .withMessage('Permissions must not contain duplicates'),
   body('permissions.*').optional().isString().trim().isIn(allowedPermissions)
     .withMessage('Permission is not supported'),
+  body('allowedLocationType').optional().isIn(['any', 'warehouse', 'outlet'])
+    .withMessage('Works at must be any, warehouse, or outlet'),
 ];
 
 router.get('/', adminOnly, rolesController.list);

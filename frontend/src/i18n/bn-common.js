@@ -124,6 +124,8 @@ const common = {
   'Description': 'বিবরণ',
   'Reason': 'কারণ',
   'Location': 'অবস্থান',
+  'Works at': 'কর্মস্থল',
+  'Any location': 'যেকোনো অবস্থান',
   'Category': 'ক্যাটাগরি',
   'Categories': 'ক্যাটাগরি',
   'Brand': 'ব্র্যান্ড',

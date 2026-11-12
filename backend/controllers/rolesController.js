@@ -24,10 +24,13 @@ async function list(req, res, next) {
 async function create(req, res, next) {
   try {
     const permissions = expandPermissions(['dashboard:read', ...(req.body.permissions || [])]);
-    const role = await Role.create({ name: req.body.name, permissions });
+    const role = await Role.create({
+      name: req.body.name, permissions,
+      ...(req.body.allowedLocationType !== undefined ? { allowedLocationType: req.body.allowedLocationType } : {}),
+    });
     await AuditLog.create({
       actorId: req.user._id, action: 'CREATE', entity: 'Role', entityId: role._id,
-      after: { name: role.name, permissions: role.permissions }, ipAddress: req.ip,
+      after: { name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType }, ipAddress: req.ip,
     });
     return res.status(201).json({ success: true, role });
   } catch (error) {
@@ -40,14 +43,18 @@ async function update(req, res, next) {
     const currentRole = await Role.findById(req.params.id);
     if (!currentRole) throw statusError('Role not found', 404);
     if (currentRole.name === 'Super Admin') throw statusError('The Super Admin role cannot be modified', 403);
-    const before = { name: currentRole.name, permissions: currentRole.permissions };
+    const before = {
+      name: currentRole.name, permissions: currentRole.permissions,
+      allowedLocationType: currentRole.allowedLocationType || 'any',
+    };
     const role = await Role.findByIdAndUpdate(req.params.id, {
       name: req.body.name,
       permissions: expandPermissions(req.body.permissions || []),
+      ...(req.body.allowedLocationType !== undefined ? { allowedLocationType: req.body.allowedLocationType } : {}),
     }, { new: true, runValidators: true });
     await AuditLog.create({
       actorId: req.user._id, action: 'UPDATE', entity: 'Role', entityId: role._id, before,
-      after: { name: role.name, permissions: role.permissions }, ipAddress: req.ip,
+      after: { name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType || 'any' }, ipAddress: req.ip,
     });
     return res.json({ success: true, role });
   } catch (error) {

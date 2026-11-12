@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Product, StockMovement } = require('../models');
+const { isSuperAdmin, locationIdOf } = require('./locationScope');
 
 function statusError(message, status) {
   const error = new Error(message);
@@ -7,13 +8,15 @@ function statusError(message, status) {
   return error;
 }
 
-// Access is purely role/permission based (enforced by route guards); assigned location is ignored.
-function hasGlobalStockAccess() {
-  return true;
+function hasGlobalStockAccess(user) {
+  return isSuperAdmin(user);
 }
 
-function canManageLocation() {
-  return true;
+function canManageLocation(user, locationId) {
+  if (hasGlobalStockAccess(user)) return true;
+  const assigned = locationIdOf(user?.locationId);
+  const requested = locationIdOf(locationId);
+  return Boolean(assigned && requested && assigned.toString() === requested.toString());
 }
 
 function adjustmentValue(lines, products) {

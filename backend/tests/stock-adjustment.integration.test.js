@@ -19,6 +19,7 @@ const {
 } = require('../models');
 const stockRoutes = require('../routes/stockRoutes');
 const errorMiddleware = require('../middlewares/errorMiddleware');
+const { canManageLocation, hasGlobalStockAccess } = require('../utils/stockAdjustments');
 
 const secret = 'stock-adjustment-integration-test-secret';
 const ids = {
@@ -92,6 +93,7 @@ describe('stock adjustment and count API', () => {
     user = {
       _id: new mongoose.Types.ObjectId(ids.manager),
       isActive: true,
+      locationId: new mongoose.Types.ObjectId(ids.warehouse),
       roleId: { name: 'Inventory Manager', permissions: ['stock:read', 'stock:write'] },
     };
     movements = [{
@@ -161,6 +163,29 @@ describe('stock adjustment and count API', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  it('rejects adjustments and counts outside the assigned location', async () => {
+    const other = '65b000000000000000000099';
+    const adjustment = await request(app).post('/api/stock-adjustments').set(auth()).send({
+      warehouseId: other, mode: 'ADD', reason: 'Found extra stock',
+      lines: [{ productId: ids.product, quantity: 1 }],
+    });
+
+    const count = await request(app).post('/api/stock-counts').set(auth()).send({
+      warehouseId: other, reason: 'Stock check',
+      lines: [{ productId: ids.product, countedQuantity: 1 }],
+    });
+    expect(adjustment.status).toBe(403);
+    expect(count.status).toBe(403);
+  });
+
+  it('only grants global stock access to Super Admin and denies unassigned users', () => {
+    expect(hasGlobalStockAccess({ role: 'Team', permissions: ['stock:write'] })).toBe(false);
+    expect(canManageLocation({ role: 'Team', permissions: [] }, ids.warehouse)).toBe(false);
+    expect(hasGlobalStockAccess({ role: 'Super Admin', permissions: [] })).toBe(true);
+    expect(canManageLocation({ role: 'Super Admin', permissions: [] }, ids.warehouse)).toBe(true);
+    expect(hasGlobalStockAccess({ role: 'Team', permissions: ['*'] })).toBe(true);
+  });
 
   it('posts adjustments at the configured limit and requires Super Admin approval above it', async () => {
     const missingReason = await request(app).post('/api/stock-adjustments').set(auth()).send({

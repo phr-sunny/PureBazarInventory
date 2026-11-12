@@ -9,6 +9,7 @@ jest.mock('../models', () => ({
 const { User } = require('../models');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const errorMiddleware = require('../middlewares/errorMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 const { body } = require('express-validator');
@@ -26,6 +27,9 @@ function createApp() {
   app.get('/one-permission', authMiddleware, authorizeMiddleware({
     anyPermissions: ['stock:read', 'stock:transfer:read'],
   }), (req, res) => res.json({ user: req.user.id }));
+  app.post('/scope/:locationId/:outletId/:warehouseId', authMiddleware, enforceLocationScope, (req, res) => {
+    res.json({ locationId: req.locationId, query: req.query, body: req.body, params: req.params });
+  });
   app.post('/validated', body('name').isString().notEmpty(), validateRequest, (req, res) => {
     res.json({ name: req.body.name });
   });
@@ -116,7 +120,6 @@ describe('middleware integration', () => {
     });
     const allowed = await request(app).get('/one-permission')
       .set({ Authorization: `Bearer ${tokenFor()}` });
-
     setUser({
       _id: { toString: () => userId },
       isActive: true,
@@ -124,9 +127,38 @@ describe('middleware integration', () => {
     });
     const denied = await request(app).get('/one-permission')
       .set({ Authorization: `Bearer ${tokenFor()}` });
-
     expect(allowed.status).toBe(200);
     expect(denied.status).toBe(403);
+  });
+
+  it('overwrites location fields for a locked user and fails closed without an assignment', async () => {
+    const assigned = '65b000000000000000000003';
+    const other = '65b000000000000000000004';
+    const user = { _id: userId, isActive: true, roleId: { name: 'Team', permissions: [] }, locationId: assigned };
+    setUser(user);
+    const response = await request(app).post(`/scope/${other}/${other}/${other}`)
+      .query({ locationId: other, outletId: other, warehouseId: other, selectedOutletId: other })
+      .set('Authorization', `Bearer ${tokenFor()}`)
+      .send({ locationId: other, outletId: other, warehouseId: other });
+    expect(response.status).toBe(200);
+    expect(response.body.locationId).toBe(assigned);
+    for (const source of [response.body.query, response.body.body, response.body.params]) {
+      expect(source).toMatchObject({ locationId: assigned, outletId: assigned, warehouseId: assigned });
+    }
+    setUser({ ...user, locationId: null });
+    expect((await request(app).post(`/scope/${other}/${other}/${other}`)
+      .set('Authorization', `Bearer ${tokenFor()}`)).status).toBe(403);
+  });
+
+  it('lets Super Admin select any location or all locations', async () => {
+    const selected = '65b000000000000000000004';
+    setUser({ _id: userId, isActive: true, locationId: 'legacy', roleId: { name: 'Super Admin', permissions: ['*'] } });
+    const selectedResponse = await request(app).post(`/scope/${selected}/${selected}/${selected}`)
+      .query({ selectedOutletId: selected }).set('Authorization', `Bearer ${tokenFor()}`);
+    const allResponse = await request(app).post(`/scope/${selected}/${selected}/${selected}`)
+      .set('Authorization', `Bearer ${tokenFor()}`);
+    expect(selectedResponse.body.locationId).toBe(selected);
+    expect(allResponse.body.locationId).toBeNull();
   });
 
   it('returns validation errors and consistent central error responses', async () => {

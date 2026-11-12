@@ -1,12 +1,12 @@
 const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
 const {
   AuditLog, Location, Role, User,
 } = require('../models');
-const { getDefaultPosOutlet } = require('../services/posOutletService');
+const { isSuperAdmin, locationIdOf } = require('../utils/locationScope');
 
-function publicUser(user) {
+function publicUser(user, resolvedLocation) {
   const role = user.roleId && typeof user.roleId === 'object' ? user.roleId : null;
+  const location = resolvedLocation || (user.locationId?.name ? user.locationId : null);
   return {
     id: user._id.toString(),
     name: user.name,
@@ -14,7 +14,8 @@ function publicUser(user) {
     roleId: role?._id?.toString() || user.roleId?.toString() || null,
     role: role?.name || null,
     isActive: user.isActive,
-    locationId: user.locationId?.toString() || null,
+    locationId: locationIdOf(user.locationId)?.toString() || null,
+    location: location ? { id: location._id.toString(), name: location.name, type: location.type } : null,
     createdAt: user.createdAt,
   };
 }
@@ -30,22 +31,28 @@ function handleError(error, next) {
   return next(error);
 }
 
-async function validateLocation(locationId) {
-  if (!locationId) return;
-  if (!await Location.exists({ _id: locationId })) throw statusError('Location not found', 400);
-}
-
-async function validatePosOutlet(locationId) {
-  if (!locationId) return;
-  if (!await Location.exists({ _id: locationId, type: 'OUTLET', isActive: { $ne: false } })) {
-    throw statusError('Cashiers must be assigned to an active POS outlet', 400);
+async function validateLocation(role, locationId) {
+  if (isSuperAdmin({ roleId: role })) {
+    if (locationId) throw statusError('Super Admin cannot have a location', 400);
+    return null;
   }
+  if (!locationId) throw statusError('A location is required for this user', 400);
+  const location = await Location.findById(locationId);
+  if (!location) throw statusError('Location not found', 400);
+  if (location.type === 'OUTLET' && location.isActive === false) {
+    throw statusError('Location must be an active outlet', 400);
+  }
+  const required = { warehouse: 'CENTRAL', outlet: 'OUTLET' }[role.allowedLocationType];
+  if (required && location.type !== required) throw statusError('Location type does not match the role', 400);
+  return location;
 }
 
 async function list(req, res, next) {
   try {
-    const users = await User.find().select('-passwordHash').populate('roleId', 'name').sort({ name: 1 }).lean();
-    return res.json({ success: true, users: users.map(publicUser) });
+    const users = await User.find().select('-passwordHash').populate([
+      { path: 'roleId', select: 'name' }, { path: 'locationId', select: 'name type' },
+    ]).sort({ name: 1 }).lean();
+    return res.json({ success: true, users: users.map((user) => publicUser(user)) });
   } catch (error) {
     return next(error);
   }
@@ -55,15 +62,9 @@ async function create(req, res, next) {
   try {
     const role = await Role.findById(req.body.roleId);
     if (!role) throw statusError('Role not found', 400);
-    const isCashier = ['Cashier', 'Outlet Cashier'].includes(role.name);
-    if (isCashier) await validatePosOutlet(req.body.locationId);
-    else await validateLocation(req.body.locationId);
-    let locationId = req.body.locationId;
-    if (!locationId && isCashier) {
-      const outlet = await getDefaultPosOutlet();
-      if (!outlet) throw statusError('No active POS outlet is configured', 503);
-      locationId = outlet._id;
-    }
+    if (!isSuperAdmin(req.user)) throw statusError('Only Super Admin can assign locations', 403);
+    const location = await validateLocation(role, req.body.locationId);
+    const locationId = location?._id;
     const user = await User.create({
       name: req.body.name,
       email: req.body.email,
@@ -72,9 +73,13 @@ async function create(req, res, next) {
       ...(locationId ? { locationId } : {}),
       isActive: req.body.isActive ?? true,
     });
-    await AuditLog.create({ actorId: req.user._id, action: 'CREATE', entity: 'User', entityId: user._id, ipAddress: req.ip });
+    await AuditLog.create({
+      actorId: req.user._id, action: 'CREATE', entity: 'User', entityId: user._id,
+      after: { name: user.name, email: user.email, roleId: String(role._id), locationId: locationId?.toString() || null, isActive: user.isActive },
+      ipAddress: req.ip,
+    });
     user.roleId = role;
-    return res.status(201).json({ success: true, user: publicUser(user) });
+    return res.status(201).json({ success: true, user: publicUser(user, location) });
   } catch (error) {
     return handleError(error, next);
   }
@@ -82,17 +87,18 @@ async function create(req, res, next) {
 
 async function update(req, res, next) {
   try {
+    const previous = await User.findById(req.params.id).populate('roleId', 'name');
+    if (!previous) throw statusError('User not found', 404);
+    const role = await Role.findById(req.body.roleId);
+    if (!role) throw statusError('Role not found', 400);
+    const hasLocation = Object.prototype.hasOwnProperty.call(req.body, 'locationId');
+    if (hasLocation && !isSuperAdmin(req.user)) throw statusError('Only Super Admin can assign locations', 403);
+    const locationId = hasLocation ? req.body.locationId : previous.locationId;
+    const location = await validateLocation(role, locationId);
     const updates = { name: req.body.name, email: req.body.email, roleId: req.body.roleId };
-    if (Object.prototype.hasOwnProperty.call(req.body, 'locationId')) {
-      await validateLocation(req.body.locationId);
-      updates.locationId = req.body.locationId || undefined;
-    }
+    if (hasLocation) updates.locationId = location?._id || null;
     if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
     if (req.body.password) updates.passwordHash = await bcrypt.hash(req.body.password, 12);
-    if (!mongoose.isValidObjectId(updates.roleId) || !await Role.exists({ _id: updates.roleId })) {
-      throw statusError('Role not found', 400);
-    }
-    const previous = await User.findById(req.params.id).populate('roleId', 'name');
     const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
       .populate('roleId', 'name');
     if (!user) throw statusError('User not found', 404);
@@ -113,7 +119,7 @@ async function update(req, res, next) {
       metadata: { passwordChanged: Boolean(req.body.password) },
       ipAddress: req.ip,
     });
-    return res.json({ success: true, user: publicUser(user) });
+    return res.json({ success: true, user: publicUser(user, location) });
   } catch (error) {
     return handleError(error, next);
   }

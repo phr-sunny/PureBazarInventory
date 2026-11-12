@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 const { expandPermissions } = require('../config/permissionCatalog');
+const { isSuperAdmin, locationIdOf } = require('../utils/locationScope');
 
 function authMiddleware(req, res, next) {
   const authorization = req.get('authorization') || '';
@@ -35,7 +36,9 @@ function authMiddleware(req, res, next) {
 
 async function loadUser(userId, req, next) {
   try {
-    const user = await User.findById(userId).populate('roleId');
+    const user = await User.findById(userId).populate([
+      { path: 'roleId' }, { path: 'locationId', select: 'name type' },
+    ]);
     if (!user || !user.isActive) {
       const error = new Error('Authentication required');
       error.status = 401;
@@ -43,6 +46,8 @@ async function loadUser(userId, req, next) {
     }
 
     const role = user.roleId && typeof user.roleId === 'object' ? user.roleId : null;
+    const location = user.locationId?.name ? user.locationId : null;
+    const admin = isSuperAdmin({ roleId: role });
     req.user = {
       _id: user._id,
       id: user._id.toString(),
@@ -50,7 +55,9 @@ async function loadUser(userId, req, next) {
       email: user.email,
       role: role?.name || null,
       roleId: role?._id || user.roleId,
-      locationId: user.locationId || null,
+      locationId: admin ? null : locationIdOf(user.locationId),
+      location: !admin && location ? { id: location._id.toString(), name: location.name, type: location.type } : null,
+      isLocationLocked: !admin && Boolean(user.locationId),
       permissions: expandPermissions(Array.isArray(role?.permissions)
         ? role.permissions
         : Array.isArray(user.permissions) ? user.permissions : []),

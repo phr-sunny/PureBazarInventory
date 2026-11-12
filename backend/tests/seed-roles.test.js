@@ -114,10 +114,7 @@ describe('default role seeder', () => {
       },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
     );
-    expect(User.updateMany).toHaveBeenCalledWith({
-      roleId: { $in: ['cashier-role-id'] },
-      $or: [{ locationId: { $exists: false } }, { locationId: null }],
-    }, { $set: { locationId: 'demo-outlet-id' } });
+    expect(User.updateMany).not.toHaveBeenCalled();
     expect(Location.countDocuments).toHaveBeenCalledWith({
       $or: [
         { type: 'CENTRAL', name: 'Central Warehouse' },

@@ -2,11 +2,14 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { AuditLog, User } = require('../models');
 const { expandPermissions } = require('../config/permissionCatalog');
+const { isSuperAdmin, locationIdOf } = require('../utils/locationScope');
 
 const DUMMY_HASH = bcrypt.hashSync('purebazar-dummy-password', 10);
 
 function publicUser(user) {
   const role = user.roleId && typeof user.roleId === 'object' ? user.roleId : null;
+  const admin = isSuperAdmin({ roleId: role });
+  const location = user.locationId?.name ? user.locationId : null;
   return {
     id: user._id.toString(),
     name: user.name,
@@ -14,13 +17,18 @@ function publicUser(user) {
     role: role?.name || null,
     roleId: role?._id?.toString() || user.roleId?.toString() || null,
     permissions: expandPermissions(Array.isArray(role?.permissions) ? role.permissions : []),
+    locationId: admin ? null : locationIdOf(user.locationId),
+    location: !admin && location ? { id: location._id.toString(), name: location.name, type: location.type } : null,
+    isLocationLocked: !admin && Boolean(user.locationId),
   };
 }
 
 async function login(req, res, next) {
   try {
     const email = req.body.email.trim().toLowerCase();
-    const user = await User.findOne({ email }).select('+passwordHash').populate('roleId');
+    const user = await User.findOne({ email }).select('+passwordHash').populate([
+      { path: 'roleId' }, { path: 'locationId', select: 'name type' },
+    ]);
     const hasPasswordHash = typeof user?.passwordHash === 'string' && user.passwordHash.length > 0;
     // Compare against a dummy hash when the user is unknown so response time does not reveal valid emails.
     const passwordMatches = await bcrypt.compare(

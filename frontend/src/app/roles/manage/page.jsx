@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { useDispatch, useSelector } from 'react-redux';
 import { refreshSession } from '@/store/auth-slice';
 import { AlertTriangle, KeyRound, Pencil, Plus, Shield, Trash2 } from 'lucide-react';
-import { Button, Input, Modal } from '@/components/ui';
+import { Button, Input, Modal, Select } from '@/components/ui';
 import { createRole, deleteRole, getRoles, getUsers, updateRole } from '@/services/admin';
 import { permissionGroups, presets, sensitivePrefixes, toFormPermissions } from './permission-options';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
-const emptyForm = { name: '', permissions: ['dashboard:read'] };
+const emptyForm = { name: '', permissions: ['dashboard:read'], allowedLocationType: 'any' };
 
 export default function RoleManagementPage() {
   const dispatch = useDispatch();
@@ -54,7 +54,7 @@ export default function RoleManagementPage() {
 
   function startEdit(role) {
     setEditingRole(role);
-    setForm({ name: role.name, permissions: toFormPermissions(role.permissions || []) });
+    setForm({ name: role.name, permissions: toFormPermissions(role.permissions || []), allowedLocationType: role.allowedLocationType || 'any' });
     setError('');
     setDialogOpen(true);
   }
@@ -84,6 +84,7 @@ export default function RoleManagementPage() {
     const payload = {
       name: form.name,
       permissions: [...new Set(form.permissions)],
+      allowedLocationType: form.allowedLocationType,
     };
     try {
       if (editingRole) await updateRole(token, editingRole._id, payload);
@@ -229,6 +230,11 @@ export default function RoleManagementPage() {
               ))}
             </div>
           </div>
+          <Select label="Works at" name="allowedLocationType" value={form.allowedLocationType} onChange={(event) => setForm((current) => ({ ...current, allowedLocationType: event.target.value }))} required options={[
+            { value: 'any', label: 'Any location' },
+            { value: 'warehouse', label: 'Central Warehouse' },
+            { value: 'outlet', label: 'Outlet' },
+          ]} />
           {form.name.trim() !== 'Super Admin' && form.permissions.some((permission) => (
             sensitivePrefixes.some((prefix) => permission.startsWith(prefix))
           )) && (

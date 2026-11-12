@@ -5,7 +5,7 @@ const request = require('supertest');
 
 jest.mock('../models', () => ({
   AuditLog: { create: jest.fn() },
-  Location: { exists: jest.fn() },
+  Location: { findById: jest.fn() },
   Role: {
     create: jest.fn(),
     exists: jest.fn(),
@@ -24,14 +24,9 @@ jest.mock('../models', () => ({
   },
 }));
 
-jest.mock('../services/posOutletService', () => ({
-  getDefaultPosOutlet: jest.fn(),
-}));
-
 const {
   AuditLog, Location, Role, User,
 } = require('../models');
-const posOutletService = require('../services/posOutletService');
 const roleRoutes = require('../routes/roleRoutes');
 const userRoutes = require('../routes/userRoutes');
 const errorMiddleware = require('../middlewares/errorMiddleware');
@@ -40,6 +35,7 @@ const secret = 'users-roles-integration-test-secret';
 const adminId = '65b000000000000000000001';
 const roleId = '65b000000000000000000002';
 const createdUserId = '65b000000000000000000003';
+const locationId = '65b000000000000000000004';
 const adminRole = { _id: roleId, name: 'Super Admin', permissions: ['*'] };
 const admin = { _id: adminId, name: 'Admin User', email: 'admin@example.test', isActive: true, roleId: adminRole };
 const role = { _id: roleId, name: 'Inventory Manager', permissions: ['products:read'] };
@@ -76,8 +72,13 @@ describe('users and roles endpoints', () => {
     process.env.JWT_SECRET = secret;
     jest.clearAllMocks();
     AuditLog.create.mockResolvedValue({});
-    Location.exists.mockResolvedValue(true);
-    User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue(admin) });
+    Location.findById.mockResolvedValue({ _id: locationId, name: 'Outlet', type: 'OUTLET', isActive: true });
+    User.findById.mockImplementation((id) => ({
+      populate: jest.fn().mockResolvedValue(id === adminId ? admin : {
+        _id: createdUserId, name: 'Previous User', email: 'new@example.test', roleId: role,
+        locationId, isActive: true,
+      }),
+    }));
     User.find.mockReturnValue(chain([]));
     Role.find.mockReturnValue(chain([]));
     Role.findById.mockResolvedValue(role);
@@ -85,7 +86,7 @@ describe('users and roles endpoints', () => {
     User.exists.mockResolvedValue(null);
     User.create.mockResolvedValue({ _id: createdUserId, name: 'New User', email: 'new@example.test', roleId, isActive: true });
     User.findByIdAndUpdate.mockReturnValue({ populate: jest.fn().mockResolvedValue({
-      _id: createdUserId, name: 'Updated User', email: 'new@example.test', roleId: role, isActive: true,
+      _id: createdUserId, name: 'Updated User', email: 'new@example.test', roleId: role, locationId, isActive: true,
     }) });
     User.findByIdAndDelete.mockResolvedValue({ _id: createdUserId });
     Role.create.mockResolvedValue(role);
@@ -94,7 +95,10 @@ describe('users and roles endpoints', () => {
   });
 
   it('lists users and roles without exposing password hashes', async () => {
-    User.find.mockReturnValue(chain([{ ...admin, roleId: adminRole, passwordHash: 'private' }]));
+    User.find.mockReturnValue(chain([
+      { ...admin, roleId: adminRole, passwordHash: 'private' },
+      { _id: createdUserId, name: 'Team User', roleId: role, locationId: { _id: locationId, name: 'Outlet', type: 'OUTLET' } },
+    ]));
     Role.find.mockReturnValue(chain([role]));
 
     const users = await request(app).get('/api/users').set(auth);
@@ -103,13 +107,16 @@ describe('users and roles endpoints', () => {
     expect(users.status).toBe(200);
     expect(users.body.users[0]).toMatchObject({ id: adminId, role: 'Super Admin' });
     expect(users.body.users[0].passwordHash).toBeUndefined();
+    expect(users.body.users[1]).toMatchObject({
+      locationId, location: { id: locationId, name: 'Outlet', type: 'OUTLET' },
+    });
     expect(roles.status).toBe(200);
     expect(roles.body.roles).toEqual([role]);
   });
 
   it('creates users with hashed passwords and records the audit event', async () => {
     const response = await request(app).post('/api/users').set(auth).send({
-      name: 'New User', email: 'new@example.test', password: 'long-password', roleId,
+      name: 'New User', email: 'new@example.test', password: 'long-password', roleId, locationId,
     });
 
     expect(response.status).toBe(201);
@@ -119,31 +126,42 @@ describe('users and roles endpoints', () => {
     expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'CREATE', entity: 'User' }));
   });
 
-  it('assigns new cashiers to the active default outlet when none is selected', async () => {
-    Role.findById.mockResolvedValue({ ...role, name: 'Cashier' });
-    posOutletService.getDefaultPosOutlet.mockResolvedValue({ _id: '65b000000000000000000004' });
-
+  it('rejects users without locations on create and update', async () => {
     const response = await request(app).post('/api/users').set(auth).send({
-      name: 'Test Cashier', email: 'test2@example.test', password: 'long-password', roleId,
+      name: 'Test User', email: 'test2@example.test', password: 'long-password', roleId,
     });
-
-    expect(response.status).toBe(201);
-    expect(User.create).toHaveBeenCalledWith(expect.objectContaining({
-      locationId: '65b000000000000000000004',
-    }));
+    const updated = await request(app).put(`/api/users/${createdUserId}`).set(auth).send({
+      name: 'Test User', email: 'test2@example.test', roleId, locationId: null,
+    });
+    expect(response.status).toBe(400);
+    expect(updated.status).toBe(400);
+    expect(User.create).not.toHaveBeenCalled();
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('rejects explicit cashier assignments that are not active outlets', async () => {
-    Role.findById.mockResolvedValue({ ...role, name: 'Cashier' });
-    Location.exists.mockResolvedValue(false);
+  it('requires Super Admin accounts to have no location', async () => {
+    Role.findById.mockResolvedValue(adminRole);
+    const invalid = await request(app).post('/api/users').set(auth).send({
+      name: 'Admin User', email: 'admin2@example.test', password: 'long-password', roleId, locationId,
+    });
+    expect(invalid.status).toBe(400);
+    expect(User.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a location incompatible with the role', async () => {
+    Role.findById.mockResolvedValue({ ...role, allowedLocationType: 'warehouse' });
     const response = await request(app).post('/api/users').set(auth).send({
-      name: 'Test Cashier', email: 'test2@example.test', password: 'long-password', roleId,
-      locationId: '65b000000000000000000004',
+      name: 'Test User', email: 'test2@example.test', password: 'long-password', roleId, locationId,
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.message).toMatch(/active POS outlet/);
+    expect(response.body.message).toMatch(/does not match/);
     expect(User.create).not.toHaveBeenCalled();
+    const updated = await request(app).put(`/api/users/${createdUserId}`).set(auth).send({
+      name: 'Test User', email: 'test2@example.test', roleId,
+    });
+    expect(updated.status).toBe(400);
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it('updates and deletes users, auditing each write', async () => {
@@ -181,7 +199,10 @@ describe('users and roles endpoints', () => {
       locationId: '65b000000000000000000004',
     }));
     expect(response.body.user.locationId).toBe('65b000000000000000000004');
-    expect(Location.exists).toHaveBeenCalledWith({ _id: '65b000000000000000000004' });
+    expect(Location.findById).toHaveBeenCalledWith(locationId);
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      entity: 'User', action: 'CREATE', after: expect.objectContaining({ locationId }),
+    }));
   });
 
   it('creates, updates, and deletes roles with audit records', async () => {
@@ -257,6 +278,33 @@ describe('users and roles endpoints', () => {
     expect(invalid.status).toBe(400);
     expect(User.create).not.toHaveBeenCalled();
     expect(forbidden.status).toBe(403);
+  });
+
+  it('does not let a non-admin change a user location', async () => {
+    User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue({
+      ...admin, roleId: { name: 'Team', permissions: ['roles:write'] }, locationId,
+    }) });
+    const response = await request(app).put(`/api/users/${createdUserId}`).set(auth).send({
+      name: 'Test User', email: 'test@example.test', roleId, locationId,
+    });
+    expect(response.status).toBe(403);
+    expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('validates and audits the role location type without changing omitted values', async () => {
+    const invalid = await request(app).post('/api/roles').set(auth).send({
+      name: 'Warehouse Team', permissions: [], allowedLocationType: 'invalid',
+    });
+    expect(invalid.status).toBe(400);
+    Role.findByIdAndUpdate.mockResolvedValue({ ...role, allowedLocationType: 'warehouse' });
+    const updated = await request(app).put(`/api/roles/${roleId}`).set(auth).send({
+      name: 'Warehouse Team', permissions: [], allowedLocationType: 'warehouse',
+    });
+    expect(updated.status).toBe(200);
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      entity: 'Role', before: expect.objectContaining({ allowedLocationType: 'any' }),
+      after: expect.objectContaining({ allowedLocationType: 'warehouse' }),
+    }));
   });
 
   it('protects the Super Admin role and prevents deleting assigned roles', async () => {

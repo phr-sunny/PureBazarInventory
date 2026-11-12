@@ -6,16 +6,21 @@ import { useSelector } from 'react-redux';
 import { Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { Badge, Button, Input, Modal, Select } from '@/components/ui';
 import { createUser, deleteUser, getRoles, getUsers, updateUser } from '@/services/admin';
+import { getLocations } from '@/services/stock';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
+import locationUtils from './location-utils.cjs';
 
-const emptyForm = { name: '', email: '', password: '', roleId: '', isActive: true };
+const { isSuperAdmin, eligibleLocations, locationForRole, userPayload } = locationUtils;
+const emptyForm = { name: '', email: '', password: '', roleId: '', locationId: '', isActive: true };
 
 export default function RoleUsersPage() {
   const token = useSelector((state) => state.auth.token);
   const currentUser = useSelector((state) => state.auth.user);
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -23,6 +28,8 @@ export default function RoleUsersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const selectedRole = roles.find((role) => role._id === form.roleId);
+  const availableLocations = eligibleLocations(selectedRole, locations);
 
   async function refresh() {
     const [usersResponse, rolesResponse] = await Promise.all([getUsers(token), getRoles(token)]);
@@ -41,6 +48,14 @@ export default function RoleUsersPage() {
       })
       .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load users.'))
       .finally(() => active && setLoading(false));
+    setLocationsLoaded(false);
+    getLocations(token)
+      .then((response) => {
+        if (!active) return;
+        setLocations(response.data.locations);
+        setLocationsLoaded(true);
+      })
+      .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load locations.'));
     return () => { active = false; };
   }, [token]);
 
@@ -53,17 +68,21 @@ export default function RoleUsersPage() {
 
   function startEdit(user) {
     setEditingUser(user);
-    setForm({ name: user.name, email: user.email, password: '', roleId: user.roleId, isActive: user.isActive });
+    const role = roles.find((item) => item._id === user.roleId);
+    setForm({ name: user.name, email: user.email, password: '', roleId: user.roleId, locationId: locationForRole(role, locations, user.locationId), isActive: user.isActive });
     setError('');
     setDialogOpen(true);
   }
 
   async function submit(event) {
     event.preventDefault();
+    if (!selectedRole || (!isSuperAdmin(selectedRole) && (!locationsLoaded || !locationForRole(selectedRole, locations, form.locationId)))) {
+      setError('Select an available location for this role.');
+      return;
+    }
     setSaving(true);
     setError('');
-    const payload = { ...form };
-    if (!payload.password) delete payload.password;
+    const payload = userPayload(form, selectedRole);
     try {
       if (editingUser) await updateUser(token, editingUser.id, payload);
       else await createUser(token, payload);
@@ -95,7 +114,7 @@ export default function RoleUsersPage() {
           <h1 className="text-2xl font-semibold text-slate-900"><T>{"Users"}</T></h1>
           <p className="mt-1 text-sm text-slate-600"><T>{"Manage accounts and assign system roles."}</T></p>
         </div>
-        <Button onClick={startCreate} disabled={!roles.length}>
+        <Button onClick={startCreate} disabled={!roles.length || !locationsLoaded}>
           <Plus size={17} /> Add user
         </Button>
       </div>
@@ -115,19 +134,20 @@ export default function RoleUsersPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-max text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-              <tr><th className="px-4 py-3 font-semibold"><T>{"Name"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Email"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Role"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Status"}</T></th><th className="px-4 py-3 text-right font-semibold"><T>{"Actions"}</T></th></tr>
+              <tr><th className="px-4 py-3 font-semibold"><T>{"Name"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Email"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Role"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Location"}</T></th><th className="px-4 py-3 font-semibold"><T>{"Status"}</T></th><th className="px-4 py-3 text-right font-semibold"><T>{"Actions"}</T></th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? <tr><td colSpan="5" className="px-4 py-10 text-center text-slate-500"><T>{"Loading users..."}</T></td></tr>
-                : users.length === 0 ? <tr><td colSpan="5" className="px-4 py-10 text-center text-slate-500"><T>{"No users found."}</T></td></tr>
+              {loading ? <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-500"><T>{"Loading users..."}</T></td></tr>
+                : users.length === 0 ? <tr><td colSpan="6" className="px-4 py-10 text-center text-slate-500"><T>{"No users found."}</T></td></tr>
                   : users.map((user) => (
                     <tr key={user.id}>
                       <td className="px-4 py-3 font-medium text-slate-900">{user.name}</td>
                       <td className="px-4 py-3 text-slate-600">{user.email}</td>
                       <td className="px-4 py-3 text-slate-700">{user.role || 'Unassigned'}</td>
+                      <td className="px-4 py-3 text-slate-700">{user.location?.name || locations.find((location) => location.id === user.locationId)?.name || '—'}</td>
                       <td className="px-4 py-3"><Badge variant={user.isActive ? 'success' : 'neutral'}>{user.isActive ? 'Active' : 'Inactive'}</Badge></td>
                       <td className="px-4 py-3 text-right">
-                        <button title="Edit user" aria-label={`Edit ${user.name}`} className="icon-button" onClick={() => startEdit(user)}><Pencil size={16} /></button>
+                        <button title="Edit user" aria-label={`Edit ${user.name}`} className="icon-button" disabled={!locationsLoaded} onClick={() => startEdit(user)}><Pencil size={16} /></button>
                         <button title="Delete user" aria-label={`Delete ${user.name}`} className="icon-button" disabled={user.id === currentUser?.id} onClick={() => remove(user)}><Trash2 size={16} /></button>
                       </td>
                     </tr>
@@ -142,9 +162,19 @@ export default function RoleUsersPage() {
           <Input label="Full name" name="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required minLength={2} maxLength={100} />
           <Input label="Email address" name="email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
           <Input label={editingUser ? 'New password (optional)' : 'Password'} name="password" type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required={!editingUser} minLength={8} maxLength={128} />
-          <Select label="Role" name="roleId" value={form.roleId} onChange={(event) => setForm({ ...form, roleId: event.target.value })} required>
+          <Select label="Role" name="roleId" value={form.roleId} onChange={(event) => {
+            const roleId = event.target.value;
+            const role = roles.find((item) => item._id === roleId);
+            setForm((current) => ({ ...current, roleId, locationId: locationForRole(role, locations, current.locationId) }));
+          }} required>
             {roles.map((role) => <option key={role._id} value={role._id}>{role.name}</option>)}
           </Select>
+          {selectedRole && !isSuperAdmin(selectedRole) && (
+            <Select label="Location" name="locationId" value={form.locationId} onChange={(event) => setForm((current) => ({ ...current, locationId: event.target.value }))} required disabled={!locationsLoaded}>
+              <option value="">{locationsLoaded ? 'Select a location' : 'Loading locations...'}</option>
+              {availableLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </Select>
+          )}
           {editingUser && <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} /> Account is active</label>}
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
             <Button variant="secondary" type="button" onClick={() => setDialogOpen(false)}>Cancel</Button>
