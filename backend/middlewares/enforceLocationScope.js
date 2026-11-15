@@ -7,7 +7,7 @@ function enforceLocationScope(req, res, next) {
     return next(error);
   }
   if (isSuperAdmin(req.user)) {
-    req.locationId = req.query.selectedOutletId || null;
+    req.locationId = req.query.selectedOutletId || req.query.warehouseId || null;
     return next();
   }
   const locationId = locationIdOf(req.user.locationId);

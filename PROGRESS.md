@@ -665,3 +665,8 @@
 	- Files: user and role APIs/models, authentication and location-scope middleware, stock adjustment helpers, role/user administration screens, seeder, Bengali labels, and focused tests.
 	- Decisions: require a role-compatible location for non-admin user writes; Super Admin is unrestricted and has no location; keep location IDs in existing fields, include location details separately, and do not mount the new scope middleware on existing routes. Stock adjustment/count creation and count posting enforce assignment; their list routes remain unchanged. Seeder no longer backfills users.
 	- Validation: backend suite and frontend build pass; focused frontend location tests pass. Full frontend tests retain a pre-existing i18n failure for six unrelated missing translations. The configured database has no non-Super-Admin users without a location; no migration was run.
+
+- [x] P2 Outlet GRN
+	- Files: backend GRN/stock routes and controllers, enforceLocationScope, goods-receive integration tests, frontend warehouse and GRN screens/services.
+	- Decisions: location-locked users create, edit, view, approve, and reject GRNs only at their assigned active location; Super Admin can select active locations. Outlet direct company purchases and vendor purchases both create GRNs. Approval continues to atomically create GRN StockMovement lines at the GRN warehouseId; stock remains movement-derived.
+	- Validation: backend Jest passes (44 suites, 267 tests); focused GRN suite passes (15 tests); frontend production build passes.

@@ -8,12 +8,15 @@ const stockAdjustmentController = require('../controllers/stockAdjustmentControl
 const stockCountController = require('../controllers/stockCountController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
 router.use(locationRoutes);
 const read = [authMiddleware, authorizeMiddleware({ permissions: ['stock:read'] })];
 const write = [authMiddleware, authorizeMiddleware({ permissions: ['stock:write'] })];
+const scopedRead = [...read, enforceLocationScope];
+const scopedWrite = [...write, enforceLocationScope];
 const id = param('id').isMongoId().withMessage('A valid goods receive ID is required');
 const lines = body('lines').isArray({ min: 1 }).withMessage('At least one product line is required');
 const lineProduct = body('lines.*.productId').isMongoId().withMessage('A valid product ID is required');
@@ -64,7 +67,7 @@ const stockReason = body('reason').isString().trim().isLength({ min: 1, max: 500
   .withMessage('A reason of 1 to 500 characters is required');
 const adminApproval = [authMiddleware, authorizeMiddleware({ roles: ['Super Admin'] })];
 
-router.get('/stock', read, [
+router.get('/stock', scopedRead, [
   query('warehouseId').isMongoId().withMessage('A valid warehouse ID is required'),
 ], validateRequest, stockController.getWarehouseStock);
 router.get('/stock-adjustments', read, [
@@ -155,8 +158,10 @@ router.get('/stock/vendors', read, goodsReceiveController.listVendors);
 router.get('/stock/vendors/:id/next-challan', read, [
   param('id').isMongoId().withMessage('A valid vendor ID is required'),
 ], validateRequest, goodsReceiveController.nextChallanNumber);
-router.get('/goods-receives', read, goodsReceiveController.listGoodsReceives);
-router.post('/goods-receives', write, [
+router.get('/goods-receives', scopedRead, [
+  query('selectedOutletId').optional().isMongoId().withMessage('A valid location ID is required'),
+], validateRequest, goodsReceiveController.listGoodsReceives);
+router.post('/goods-receives', scopedWrite, [
   body('ownerType').isIn(['COMPANY', 'VENDOR']).withMessage('Owner type must be COMPANY or VENDOR'),
   vendorId,
   body('warehouseId').isMongoId().withMessage('A valid warehouse ID is required'),
@@ -167,9 +172,9 @@ router.post('/goods-receives', write, [
   lineQuantity('rejectedQuantity', 0),
   lineQuantities,
 ], validateRequest, goodsReceiveController.createGoodsReceive);
-router.get('/goods-receives/:id', read, [id], validateRequest, goodsReceiveController.getGoodsReceive);
-router.get('/goods-receives/:id/print', read, [id], validateRequest, goodsReceiveController.getGoodsReceive);
-router.put('/goods-receives/:id', write, [
+router.get('/goods-receives/:id', scopedRead, [id], validateRequest, goodsReceiveController.getGoodsReceive);
+router.get('/goods-receives/:id/print', scopedRead, [id], validateRequest, goodsReceiveController.getGoodsReceive);
+router.put('/goods-receives/:id', scopedWrite, [
   id,
   body('ownerType').optional().isIn(['COMPANY', 'VENDOR']).withMessage('Owner type must be COMPANY or VENDOR'),
   vendorId,
@@ -184,7 +189,7 @@ router.put('/goods-receives/:id', write, [
     Number(item.acceptedQuantity) + Number(item.rejectedQuantity) <= Number(item.receivedQuantity)
   ))).withMessage('Accepted and rejected quantities cannot exceed received quantity'),
 ], validateRequest, goodsReceiveController.updateGoodsReceive);
-router.post('/goods-receives/:id/approve', write, [id], validateRequest, goodsReceiveController.approveGoodsReceive);
-router.post('/goods-receives/:id/reject', write, [id], validateRequest, goodsReceiveController.rejectGoodsReceive);
+router.post('/goods-receives/:id/approve', scopedWrite, [id], validateRequest, goodsReceiveController.approveGoodsReceive);
+router.post('/goods-receives/:id/reject', scopedWrite, [id], validateRequest, goodsReceiveController.rejectGoodsReceive);
 
 module.exports = router;

@@ -38,7 +38,10 @@ export const searchReceiveProducts = (token, params) => api.get('/stock/products
   ...authConfig(token),
   params,
 });
-export const getGoodsReceives = (token) => api.get('/goods-receives', authConfig(token));
+export const getGoodsReceives = (token, selectedOutletId) => api.get('/goods-receives', {
+  ...authConfig(token),
+  params: selectedOutletId ? { selectedOutletId } : undefined,
+});
 export const createGoodsReceive = (token, payload) => api.post('/goods-receives', payload, authConfig(token));
 export const approveGoodsReceive = (token, id) => api.post(`/goods-receives/${id}/approve`, {}, authConfig(token));
 export const getPrintableGoodsReceive = (token, id) => api.get(`/goods-receives/${id}/print`, authConfig(token));

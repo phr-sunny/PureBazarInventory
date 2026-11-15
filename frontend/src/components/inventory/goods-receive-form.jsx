@@ -23,12 +23,14 @@ export default function GoodsReceiveForm() {
   const permissions = user?.permissions || [];
   const canRead = can(permissions, 'stock:read');
   const canWrite = can(permissions, 'stock:write');
+  const isSuperAdmin = user?.role === 'Super Admin';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useToastMessages({ error });
   const [searchError, setSearchError] = useState('');
   const [location, setLocation] = useState(null);
+  const [locations, setLocations] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [stock, setStock] = useState([]);
   const [ownerType, setOwnerType] = useState('COMPANY');
@@ -45,22 +47,43 @@ export default function GoodsReceiveForm() {
       return undefined;
     }
     let active = true;
-    Promise.all([getLocations(token, 'CENTRAL'), getReceiveVendors(token)])
-      .then(async ([locationResponse, vendorResponse]) => {
-        const central = locationResponse.data.locations.find(({ type }) => type === 'CENTRAL');
-        if (!central) throw new Error('Central Warehouse is not configured. Run the default data seed first.');
-        const stockResponse = await getWarehouseStock(token, central.id);
+    Promise.all([getLocations(token), getReceiveVendors(token)])
+      .then(([locationResponse, vendorResponse]) => {
+        const userLocationId = String(user?.locationId?._id || user?.locationId || '');
+        const availableLocations = locationResponse.data.locations.filter((item) => (
+          item.isActive !== false && (isSuperAdmin || item.id === userLocationId)
+        ));
+        if (!availableLocations.length) {
+          throw new Error(isSuperAdmin
+            ? 'No active locations are available for goods receiving.'
+            : 'Your assigned location is not available for goods receiving.');
+        }
+        const selected = isSuperAdmin
+          ? availableLocations.find(({ type }) => type === 'CENTRAL') || availableLocations[0]
+          : availableLocations[0];
         if (!active) return;
-        setLocation(central);
+        setLocations(availableLocations);
+        setLocation(selected);
         setVendors(vendorResponse.data.vendors);
-        setStock(stockResponse.data.stock);
       })
       .catch((requestError) => {
         if (active) setError(requestError.response?.data?.message || requestError.message || 'Unable to load GRN data.');
       })
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, token]);
+  }, [canRead, initialized, isSuperAdmin, token, user?.locationId]);
+
+  useEffect(() => {
+    if (!token || !location?.id) return undefined;
+    let active = true;
+    setStock([]);
+    getWarehouseStock(token, location.id)
+      .then((response) => active && setStock(response.data.stock))
+      .catch((requestError) => active && setError(
+        requestError.response?.data?.message || 'Unable to load location stock.',
+      ));
+    return () => { active = false; };
+  }, [location?.id, token]);
 
   useEffect(() => {
     const isVendor = ownerType === 'VENDOR';
@@ -201,8 +224,23 @@ export default function GoodsReceiveForm() {
       </div>
 
 
-      <Card title="Receive details" description="The selected Central Warehouse is loaded automatically.">
+      <Card title="Receive details" description={`Receive stock into ${location?.name || 'your location'}.`}>
         <div className="grid gap-4 md:grid-cols-2">
+          {isSuperAdmin && (
+            <Select
+              label="Receive location"
+              name="warehouseId"
+              value={location?.id || ''}
+              onChange={(event) => {
+                setLocation(locations.find((item) => item.id === event.target.value) || null);
+                setLines([]);
+                setSearch('');
+                setMatches([]);
+              }}
+            >
+              {locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </Select>
+          )}
           <Select
             label="Purchase type"
             name="ownerType"
@@ -216,7 +254,7 @@ export default function GoodsReceiveForm() {
               setSearch('');
             }}
           >
-            <option value="COMPANY"><T>{"Company purchase"}</T></option>
+            <option value="COMPANY"><T>{"Company direct purchase (parcel)"}</T></option>
             <option value="VENDOR"><T>{"Vendor purchase"}</T></option>
           </Select>
           {ownerType === 'VENDOR' && (
@@ -249,7 +287,7 @@ export default function GoodsReceiveForm() {
         )}
       </Card>
 
-      <Card title="Add products" description="Search by product name or barcode. Current Central Warehouse stock is shown for each result.">
+      <Card title="Add products" description={`Search by product name or barcode. Current ${location?.name || 'location'} stock is shown for each result.`}>
         <div className="flex max-w-xl items-end gap-2">
           <Input
             className="min-w-0 flex-1"

@@ -1,9 +1,15 @@
 const mongoose = require('mongoose');
-const { Product, StockMovement } = require('../models');
+const { Location, Product, StockMovement } = require('../models');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 
 async function getWarehouseStock(req, res, next) {
   try {
+    const location = await Location.findById(req.query.warehouseId).select('_id isActive').lean();
+    if (!location || location.isActive === false) {
+      const error = new Error('Stock is available only for an active location');
+      error.status = 400;
+      throw error;
+    }
     const grouped = await StockMovement.aggregate([
       { $match: { warehouseId: new mongoose.Types.ObjectId(req.query.warehouseId) } },
       { $group: { _id: '$productId', quantity: { $sum: '$quantity' } } },

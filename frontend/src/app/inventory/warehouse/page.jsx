@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Search } from 'lucide-react';
-import { Badge, Card, Input, Table } from '@/components/ui';
+import { Badge, Card, Input, Select, Table } from '@/components/ui';
 import { formatStock } from '@/services/stock-units.cjs';
 import { getLocations, getWarehouseStock } from '@/services/stock';
 import { T } from '@/i18n/language-provider';
@@ -15,7 +15,9 @@ const can = (permissions, permission) => permissions.includes('*') || permission
 export default function WarehousePage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
   const canRead = can(user?.permissions || [], 'stock:read');
+  const isSuperAdmin = user?.role === 'Super Admin';
   const [location, setLocation] = useState(null);
+  const [locations, setLocations] = useState([]);
   const [stock, setStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -29,21 +31,42 @@ export default function WarehousePage() {
       return undefined;
     }
     let active = true;
-    getLocations(token, 'CENTRAL')
-      .then(async (response) => {
-        const central = response.data.locations.find(({ type }) => type === 'CENTRAL');
-        if (!central) throw new Error('Central Warehouse is not configured. Run the default data seed first.');
-        const stockResponse = await getWarehouseStock(token, central.id);
+    getLocations(token)
+      .then((response) => {
+        const userLocationId = String(user?.locationId?._id || user?.locationId || '');
+        const availableLocations = response.data.locations.filter((item) => (
+          item.isActive !== false && (isSuperAdmin || item.id === userLocationId)
+        ));
+        if (!availableLocations.length) {
+          throw new Error(isSuperAdmin
+            ? 'No active locations are available.'
+            : 'Your assigned location is not available.');
+        }
+        const selected = isSuperAdmin
+          ? availableLocations.find(({ type }) => type === 'CENTRAL') || availableLocations[0]
+          : availableLocations[0];
         if (!active) return;
-        setLocation(central);
-        setStock(stockResponse.data.stock);
+        setLocations(availableLocations);
+        setLocation(selected);
       })
       .catch((requestError) => active && setError(
-        requestError.response?.data?.message || requestError.message || 'Unable to load Central Warehouse stock.',
+        requestError.response?.data?.message || requestError.message || 'Unable to load location stock.',
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, token]);
+  }, [canRead, initialized, isSuperAdmin, token, user?.locationId]);
+
+  useEffect(() => {
+    if (!token || !location?.id) return undefined;
+    let active = true;
+    setStock([]);
+    getWarehouseStock(token, location.id)
+      .then((response) => active && setStock(response.data.stock))
+      .catch((requestError) => active && setError(
+        requestError.response?.data?.message || 'Unable to load location stock.',
+      ));
+    return () => { active = false; };
+  }, [location?.id, token]);
 
   const visibleStock = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -69,9 +92,21 @@ export default function WarehousePage() {
     <section className="space-y-5">
       <div>
         <p className="mb-1 text-xs font-semibold uppercase text-slate-500"><T>{"Inventory"}</T></p>
-        <h1 className="text-2xl font-semibold text-slate-900">{location?.name || 'Central Warehouse'} Stock</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">{location?.name || 'Location'} Stock</h1>
         <p className="mt-1 text-sm text-slate-600"><T>{"Current balance is calculated from approved stock movements."}</T></p>
       </div>
+      {isSuperAdmin && (
+        <div className="max-w-sm">
+          <Select
+            label="Stock location"
+            name="warehouseId"
+            value={location?.id || ''}
+            onChange={(event) => setLocation(locations.find((item) => item.id === event.target.value) || null)}
+          >
+            {locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </Select>
+        </div>
+      )}
       <Card title="Stock on hand" description={`${stock.length} products with stock movement history`}>
         <div className="mb-4 flex max-w-xl items-end gap-2">
           <Input label="Search stock" name="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Product name or barcode" />

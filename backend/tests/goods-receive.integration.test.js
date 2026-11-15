@@ -26,9 +26,12 @@ const warehouseId = '65b000000000000000000002';
 const productId = '65b000000000000000000003';
 const vendorId = '65b000000000000000000004';
 const unitId = '65b000000000000000000005';
+const outletId = '65b000000000000000000006';
+const otherOutletId = '65b000000000000000000007';
 const admin = {
   _id: adminId,
   isActive: true,
+  locationId: warehouseId,
   roleId: { name: 'Inventory Manager', permissions: ['stock:read', 'stock:write'] },
 };
 const rice = {
@@ -71,9 +74,12 @@ describe('goods receive and movement-derived stock endpoints', () => {
   let movements;
   let session;
   let vendorStatus;
+  let currentUser;
 
-  function currentStock() {
-    return movements.reduce((sum, movement) => sum + movement.quantity, 0);
+  function currentStock(locationId) {
+    return movements
+      .filter((movement) => !locationId || movement.warehouseId.toString() === locationId.toString())
+      .reduce((sum, movement) => sum + movement.quantity, 0);
   }
 
   beforeEach(() => {
@@ -82,6 +88,7 @@ describe('goods receive and movement-derived stock endpoints', () => {
     receives = new Map();
     movements = [];
     vendorStatus = 'Active';
+    currentUser = admin;
     session = {
       withTransaction: jest.fn(async (callback) => {
         const savedReceives = new Map([...receives].map(([key, value]) => [key, { ...value }]));
@@ -97,10 +104,17 @@ describe('goods receive and movement-derived stock endpoints', () => {
       endSession: jest.fn(),
     };
     jest.spyOn(mongoose, 'startSession').mockResolvedValue(session);
-    User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue(admin) });
-    Location.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: 'CENTRAL' }) }),
-    });
+    User.findById.mockImplementation(() => ({ populate: jest.fn().mockResolvedValue(currentUser) }));
+    Location.findById.mockImplementation((id) => ({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: id,
+          name: 'Test location',
+          type: id.toString() === warehouseId ? 'CENTRAL' : 'OUTLET',
+          isActive: true,
+        }),
+      }),
+    }));
     Vendor.find.mockReturnValue(productQuery([{
       _id: new mongoose.Types.ObjectId(vendorId),
       name: 'Example Vendor',
@@ -124,6 +138,7 @@ describe('goods receive and movement-derived stock endpoints', () => {
       receives.set(receive._id.toString(), receive);
       return [receive];
     });
+
     GoodsReceive.findById.mockImplementation((id) => {
       const receive = receives.get(id.toString()) || null;
       return {
@@ -139,9 +154,10 @@ describe('goods receive and movement-derived stock endpoints', () => {
       movements.push(...docs);
       return docs;
     });
-    StockMovement.aggregate.mockImplementation(async () => (
-      currentStock() ? [{ _id: new mongoose.Types.ObjectId(productId), quantity: currentStock() }] : []
-    ));
+    StockMovement.aggregate.mockImplementation(async ([match]) => {
+      const quantity = currentStock(match.$match.warehouseId);
+      return quantity ? [{ _id: new mongoose.Types.ObjectId(productId), quantity }] : [];
+    });
   });
 
   afterEach(() => {
@@ -190,16 +206,94 @@ describe('goods receive and movement-derived stock endpoints', () => {
     expect(StockMovement.create).not.toHaveBeenCalled();
   });
 
-  it('rejects a goods receive that does not target the seeded central warehouse', async () => {
-    Location.findById.mockReturnValue({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: 'OUTLET' }) }),
+  it('allows Super Admin to select any active location for stock and GRNs', async () => {
+    currentUser = {
+      ...admin,
+      locationId: null,
+      roleId: { name: 'Super Admin', permissions: ['stock:read', 'stock:write'] },
+    };
+    const draft = await request(app).post('/api/goods-receives').set(auth).send({
+      ownerType: 'COMPANY', warehouseId: outletId,
+      lines: [{ productId, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
     });
 
-    const response = await createDraft();
+    expect(draft.status).toBe(201);
+    expect(draft.body.goodsReceive.warehouseId).toBe(outletId);
+    await request(app).get(`/api/stock?warehouseId=${outletId}`).set(auth).expect(200);
+    await request(app).get(`/api/goods-receives?selectedOutletId=${outletId}`).set(auth).expect(200);
+    expect(GoodsReceive.find).toHaveBeenCalledWith({ warehouseId: outletId });
+  });
 
-    expect(response.status).toBe(400);
-    expect(response.body.message).toBe('Goods receives must be recorded at a valid Central Warehouse');
-    expect(GoodsReceive.create).not.toHaveBeenCalled();
+  it('locks an outlet user to their location and receives directly without transfer permission', async () => {
+    currentUser = {
+      ...admin,
+      locationId: outletId,
+    };
+    movements = [
+      { warehouseId, quantity: 20 },
+      { warehouseId: otherOutletId, quantity: 7 },
+    ];
+
+    const first = await createDraft([{
+      productId, receivedQuantity: 10, acceptedQuantity: 10, rejectedQuantity: 0,
+    }]);
+    expect(first.status).toBe(201);
+    expect(first.body.goodsReceive.warehouseId).toBe(outletId);
+    expect(currentUser.roleId.permissions).not.toContain('stock:transfer:write');
+    await request(app).post(`/api/goods-receives/${first.body.goodsReceive.id}/approve`).set(auth);
+
+    Product.find.mockImplementation(() => productQuery([{
+      ...rice, ownerType: 'VENDOR', vendorId,
+    }]));
+    const second = await request(app).post('/api/goods-receives').set(auth).send({
+      ownerType: 'VENDOR',
+      vendorId,
+      vendorChallanNumber: 'OUTLET-CH-1',
+      warehouseId,
+      lines: [{ productId, receivedQuantity: 3, acceptedQuantity: 3, rejectedQuantity: 0 }],
+    });
+    expect(second.status).toBe(201);
+    expect(second.body.goodsReceive.warehouseId).toBe(outletId);
+    await request(app).post(`/api/goods-receives/${second.body.goodsReceive.id}/approve`).set(auth);
+
+    expect(currentStock(outletId)).toBe(13);
+    expect(currentStock(warehouseId)).toBe(20);
+    expect(currentStock(otherOutletId)).toBe(7);
+    const outletStock = await request(app).get(`/api/stock?warehouseId=${warehouseId}`).set(auth);
+    expect(outletStock.status).toBe(200);
+    expect(outletStock.body.warehouseId).toBe(outletId);
+    expect(outletStock.body.stock[0].quantity).toBe(13);
+    expect(movements.filter((movement) => movement.type === 'GRN')).toHaveLength(2);
+    expect(movements.filter((movement) => movement.type === 'GRN').map((movement) => movement.warehouseId))
+      .toEqual([outletId, outletId]);
+  });
+
+  it('forces outlet draft edits to the locked location and hides other locations', async () => {
+    currentUser = { ...admin, locationId: outletId };
+    const draft = await createDraft();
+    const id = draft.body.goodsReceive.id;
+
+    const update = await request(app).put(`/api/goods-receives/${id}`).set(auth).send({
+      warehouseId,
+      lines: [{ productId, receivedQuantity: 2, acceptedQuantity: 2, rejectedQuantity: 0 }],
+    });
+    expect(update.status).toBe(200);
+    expect(update.body.goodsReceive.warehouseId).toBe(outletId);
+    await request(app).get(`/api/goods-receives/${id}`).set(auth).expect(200);
+
+    const otherReceive = newReceive({
+      ownerType: 'COMPANY',
+      warehouseId,
+      lines: [{ productId, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
+      createdBy: adminId,
+    });
+    receives.set(otherReceive._id.toString(), otherReceive);
+    await request(app).get(`/api/goods-receives/${otherReceive._id}`).set(auth).expect(404);
+    await request(app).put(`/api/goods-receives/${otherReceive._id}`).set(auth).send({
+      lines: [{ productId, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
+    }).expect(404);
+    await request(app).get('/api/goods-receives').set(auth).expect(200);
+    expect(GoodsReceive.find).toHaveBeenCalledWith({ warehouseId: outletId });
   });
 
   it('returns printable line details and keeps rejected receives out of stock', async () => {

@@ -45,10 +45,21 @@ async function validateProducts(ownerType, vendorId, lines) {
   if (!validProducts) throw statusError('Products must match the purchase owner and vendor', 400);
 }
 
-async function validateCentralWarehouse(warehouseId) {
-  const location = await Location.findById(warehouseId).select('_id type').lean();
-  if (!location || location.type !== 'CENTRAL') {
-    throw statusError('Goods receives must be recorded at a valid Central Warehouse', 400);
+async function validateReceiveLocation(warehouseId) {
+  const location = await Location.findById(warehouseId).select('_id type isActive').lean();
+  if (!location || location.isActive === false || !['CENTRAL', 'OUTLET'].includes(location.type)) {
+    throw statusError('Goods receives must be recorded at a valid active location', 400);
+  }
+  return location;
+}
+
+async function validateSelectedLocation(req) {
+  if (req.locationId) await validateReceiveLocation(req.locationId);
+}
+
+function assertReceiveInScope(receive, req) {
+  if (req.locationId && receive.warehouseId.toString() !== req.locationId.toString()) {
+    throw statusError('Goods receive not found', 404);
   }
 }
 
@@ -173,7 +184,9 @@ async function listVendors(req, res, next) {
 
 async function listGoodsReceives(req, res, next) {
   try {
-    const receives = await GoodsReceive.find().sort({ createdAt: -1 }).lean();
+    await validateSelectedLocation(req);
+    const filter = req.locationId ? { warehouseId: req.locationId } : {};
+    const receives = await GoodsReceive.find(filter).sort({ createdAt: -1 }).lean();
     return res.json({ success: true, goodsReceives: receives.map((receive) => receiveOutput(receive)) });
   } catch (error) {
     return next(error);
@@ -183,7 +196,7 @@ async function listGoodsReceives(req, res, next) {
 async function createGoodsReceive(req, res, next) {
   try {
     const lines = normalizeLines(req.body.lines);
-    await validateCentralWarehouse(req.body.warehouseId);
+    await validateReceiveLocation(req.body.warehouseId);
     await validateProducts(req.body.ownerType, req.body.vendorId, lines);
     if (req.body.ownerType === 'VENDOR' && !req.body.vendorChallanNumber) {
       throw statusError('Vendor purchases require a challan number', 400);
@@ -210,13 +223,14 @@ async function updateGoodsReceive(req, res, next) {
   try {
     const receive = await GoodsReceive.findById(req.params.id);
     if (!receive) throw statusError('Goods receive not found', 404);
+    assertReceiveInScope(receive, req);
     if (receive.status !== 'Draft') throw statusError('Only draft goods receives can be edited', 409);
 
     const before = receive.toObject();
     const ownerType = req.body.ownerType || receive.ownerType;
     const vendorId = Object.prototype.hasOwnProperty.call(req.body, 'vendorId') ? req.body.vendorId : receive.vendorId;
     const lines = req.body.lines ? normalizeLines(req.body.lines) : receive.lines;
-    await validateCentralWarehouse(req.body.warehouseId || receive.warehouseId);
+    await validateReceiveLocation(req.body.warehouseId || receive.warehouseId);
     await validateProducts(ownerType, vendorId, lines);
     const challan = Object.prototype.hasOwnProperty.call(req.body, 'vendorChallanNumber')
       ? req.body.vendorChallanNumber : receive.vendorChallanNumber;
@@ -242,18 +256,21 @@ async function getGoodsReceive(req, res, next) {
   try {
     const receive = await GoodsReceive.findById(req.params.id).lean();
     if (!receive) throw statusError('Goods receive not found', 404);
+    assertReceiveInScope(receive, req);
     const ids = receive.lines.map((line) => line.productId);
-    const [products, vendor] = await Promise.all([
+    const [products, vendor, location] = await Promise.all([
       Product.find({ _id: { $in: ids } }).select('_id name barcode unitId').lean(),
       receive.vendorId
         ? Vendor.findById(receive.vendorId).select('_id name shopName memberId').lean()
         : null,
+      Location.findById(receive.warehouseId).select('name').lean(),
     ]);
     const labels = await unitLabelMap(products);
     return res.json({
       success: true,
       goodsReceive: {
         ...receiveOutput(receive, products, labels),
+        locationName: location?.name || null,
         vendor: vendor ? {
           id: vendor._id.toString(), name: vendor.name, shopName: vendor.shopName, memberId: vendor.memberId,
         } : null,
@@ -272,6 +289,7 @@ async function approveGoodsReceive(req, res, next) {
     await session.withTransaction(async () => {
       const receive = await GoodsReceive.findById(req.params.id).session(session);
       if (!receive) throw statusError('Goods receive not found', 404);
+      assertReceiveInScope(receive, req);
       if (receive.status !== 'Draft') throw statusError('Only draft goods receives can be approved', 409);
       if (receive.ownerType === 'VENDOR') {
         const vendor = await Vendor.findById(receive.vendorId).lean();
@@ -316,6 +334,7 @@ async function rejectGoodsReceive(req, res, next) {
   try {
     const receive = await GoodsReceive.findById(req.params.id);
     if (!receive) throw statusError('Goods receive not found', 404);
+    assertReceiveInScope(receive, req);
     if (receive.status !== 'Draft') throw statusError('Only draft goods receives can be rejected', 409);
     const before = receive.toObject();
     receive.status = 'Rejected';

@@ -54,7 +54,7 @@ export default function PrintableGoodsReceivePage() {
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500"><T>{"PureBazar · Goods Receive Note"}</T></p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900"><T>{"Central Warehouse"}</T></h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900">{receive.locationName || <T>{"Central Warehouse"}</T>}</h1>
             <p className="mt-1 text-sm text-slate-500">GRN {receive.id}</p>
           </div>
           <Badge tone={receive.status === 'Approved' ? 'success' : receive.status === 'Rejected' ? 'danger' : 'warning'}>{receive.status}</Badge>
