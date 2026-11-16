@@ -13,6 +13,8 @@ import { PaymentDonut, RevenueExpenseBars, SalesTrendChart } from './dashboard-c
 import { T } from '@/i18n/language-provider';
 import './dashboard.css';
 
+const DASHBOARD_LOCATION_KEY = 'purebazar.dashboardLocationId';
+
 const dateFormat = new Intl.DateTimeFormat('en-BD', {
   dateStyle: 'full',
   timeZone: 'Asia/Dhaka',
@@ -44,13 +46,22 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const [locationId, setLocationId] = useState(() => (
+    typeof window === 'undefined' ? 'all' : window.sessionStorage.getItem(DASHBOARD_LOCATION_KEY) || 'all'
+  ));
+
+  useEffect(() => {
+    const onLocationChange = (event) => setLocationId(event.detail || 'all');
+    window.addEventListener('purebazar:dashboard-location-change', onLocationChange);
+    return () => window.removeEventListener('purebazar:dashboard-location-change', onLocationChange);
+  }, []);
 
   useEffect(() => {
     if (!token) return undefined;
     let active = true;
     setLoading(true);
     setError('');
-    getDashboard(token)
+    getDashboard(token, locationId)
       .then(({ data }) => {
         if (active) setDashboard(data.dashboard);
       })
@@ -61,7 +72,7 @@ export default function DashboardScreen() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [reload, token]);
+  }, [locationId, reload, token]);
 
   const lowStock = dashboard?.lowStockAlerts || [];
   const recentActivity = dashboard?.recentActivity || [];
@@ -144,8 +155,8 @@ export default function DashboardScreen() {
               {lowStock.length ? (
                 <ul className="dashboard-list">
                   {lowStock.slice(0, 5).map((product) => (
-                    <li key={product.productId}>
-                      <span><strong>{product.productName}</strong><small>{product.barcode || 'No barcode'}</small></span>
+                    <li key={`${product.productId}-${product.locationId || 'unknown'}`}>
+                      <span><strong>{product.productName}</strong><small>{[product.barcode || 'No barcode', product.locationName].filter(Boolean).join(' · ')}</small></span>
                       <span className="dash-row-end">
                         <span className={`dash-badge ${product.quantity <= 0 ? 'critical' : 'low'}`}>
                           {product.quantity <= 0 ? 'Out of stock' : 'Low'}

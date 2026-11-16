@@ -676,6 +676,11 @@
 	- Decisions: all POS operations use the middleware-assigned active OUTLET; locked users cannot override their location, warehouse/inactive assignments are rejected, and Super Admin selects an outlet. Orders, stock movements, vendor ledger lines, returns, history, and shift reports use the same outlet.
 	- Validation: backend Jest passes (44 suites, 274 tests); frontend production build passes. Frontend tests remain 28/29 due to nine existing untranslated UI literals unrelated to POS scope.
 
+- [x] P4 Dashboard
+	- Files: location-scoped dashboard API/services and tests; Super Admin header location switcher using GET /api/locations; location-aware dashboard requests and Bengali labels.
+	- Decisions: dashboard scope comes from req.locationId; All includes active central/outlet locations, and location-locked users cannot override their assignment. Orders, stock movements, expenses, vendor ledger, trends, role dashboards, and recent activity are location-filtered; statement payables are allocated by vendor ledger share within each statement period. Stock movements stay grouped by warehouseId, so transfers update each location without being counted as sales. Super Admin selection persists in sessionStorage across pages; other users see their login-payload location read-only.
+	- Validation: full backend Jest passes (45 suites, 281 tests), including direct per-location calculations, additive All totals, and locked-user override coverage; frontend production build passes.
+
 - [x] P5 Stock scope
 	- Files: location-scope middleware and stock helpers/controllers/routes; location-filtered transfer workflow; stock count and adjustment screens; Central Warehouse Stock scope; new Outlet Inventory API/screen and navigation; optional product SKU support; role permission mapping; integration tests.
 	- Decisions: outlet users remain locked to their assigned location; central users may view active locations and create/post counts there, while adjustments, GRNs, transfers, and POS remain location-locked. Transfer reads/actions are restricted to source/destination locations. All stock totals and count differences use StockMovement rows by warehouseId; count posting audit metadata records postedBy and warehouseId.

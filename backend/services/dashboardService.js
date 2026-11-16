@@ -52,17 +52,23 @@ async function resolveLowStockThreshold(threshold) {
   return Number.isFinite(stored) ? stored : DEFAULT_LOW_STOCK_THRESHOLD;
 }
 
-async function lowStockAlerts(thresholdInput) {
-  // Outlets are always checked; the Central Warehouse only when the setting is enabled.
+async function lowStockAlerts(thresholdInput, { locationId, allLocations = false } = {}) {
+  // Notifications default to outlets; dashboard scopes pass their active locations explicitly.
   const threshold = await resolveLowStockThreshold(thresholdInput);
   const settings = await Settings.findOne({ singleton: 'global' }).lean();
   const includeCentral = Boolean(settings && settings.centralWarehouseLowStockEnabled);
+  const locationFilter = locationId
+    ? { _id: locationId }
+    : { type: allLocations || includeCentral ? { $in: ['OUTLET', 'CENTRAL'] } : 'OUTLET', isActive: { $ne: false } };
   const [outlets, products] = await Promise.all([
-    Location.find({ type: includeCentral ? { $in: ['OUTLET', 'CENTRAL'] } : 'OUTLET' }).select('name').lean(),
+    Location.find(locationFilter).select('name').lean(),
     Product.find({}).select('name barcode unitsPerPackage unitId').populate('unitId', 'name').lean(),
   ]);
   const outletNames = new Map(outlets.map((outlet) => [String(outlet._id), outlet.name]));
-  const movements = (await StockMovement.find({}).lean()).filter((m) => outletNames.has(String(m.warehouseId)));
+  const movementResults = outletNames.size
+    ? await StockMovement.find({ warehouseId: { $in: [...outletNames.keys()] } }).lean()
+    : [];
+  const movements = movementResults.filter((movement) => outletNames.has(String(movement.warehouseId)));
   const quantities = new Map();
   movements.forEach((movement) => {
     const key = `${movement.productId}|${movement.warehouseId}`;
@@ -71,14 +77,14 @@ async function lowStockAlerts(thresholdInput) {
   const names = new Map(products.map((product) => [String(product._id), product]));
   return [...quantities.entries()]
     .map(([key, total]) => ({ key, total, productId: key.split('|')[0], locationId: key.split('|')[1] }))
-    .filter(({ productId, total }) =>     names.has(productId) && total < cents(threshold))
+    .filter(({ productId, total }) => names.has(productId) && total < cents(threshold))
     .map(({ productId, locationId, total }) => ({
       productId,
-          quantityLabel: formatStockQuantity(
-            total / 100,
-            names.get(productId).unitId && names.get(productId).unitId.name,
-            names.get(productId).unitsPerPackage,
-          ),
+      quantityLabel: formatStockQuantity(
+        total / 100,
+        names.get(productId).unitId && names.get(productId).unitId.name,
+        names.get(productId).unitsPerPackage,
+      ),
       productName: names.get(productId).name,
       barcode: names.get(productId).barcode,
       locationId,
@@ -89,18 +95,98 @@ async function lowStockAlerts(thresholdInput) {
     .slice(0, LOW_STOCK_LIMIT);
 }
 
-async function getDashboard({ now = new Date(), lowStockThreshold } = {}) {
+function locationOfLedgerEntry(entry, orderLocations) {
+  return entry.locationId || orderLocations.get(String(entry.orderId)) || null;
+}
+
+function auditLogHasLocation(log, locationId) {
+  const locations = new Set();
+  const read = (record) => {
+    if (!record || typeof record !== 'object') return;
+    for (const field of ['locationId', 'warehouseId', 'outlet', 'outletId', 'fromWarehouseId', 'toWarehouseId']) {
+      if (record[field]) locations.add(String(record[field]._id || record[field]));
+    }
+  };
+  read(log.metadata);
+  read(log.before);
+  read(log.after);
+  return locations.has(String(locationId));
+}
+
+function allocatedPayables(statements, ledger, orderLocations, locationId) {
+  const entriesByVendor = new Map();
+  ledger.forEach((entry) => {
+    const date = new Date(entry.createdAt).getTime();
+    const location = locationOfLedgerEntry(entry, orderLocations);
+    if (!location || !Number.isFinite(date)) return;
+    const vendor = String(entry.vendorId);
+    if (!entriesByVendor.has(vendor)) entriesByVendor.set(vendor, []);
+    const amount = cents(entry.vendorPayable || 0) * (entry.entryType === 'RETURN' ? -1 : 1);
+    entriesByVendor.get(vendor).push({ location: String(location), date, amount });
+  });
+
+  let totalCents = 0;
+  statements.forEach((statement) => {
+    const periodStart = new Date(statement.periodStart).getTime();
+    const periodEnd = new Date(statement.periodEnd).getTime();
+    const vendorEntries = entriesByVendor.get(String(statement.vendorId)) || [];
+    const weights = new Map();
+    vendorEntries.forEach((entry) => {
+      if (entry.date < periodStart || entry.date > periodEnd) return;
+      weights.set(entry.location, (weights.get(entry.location) || 0) + entry.amount);
+    });
+    const positiveWeights = [...weights.entries()]
+      .filter(([, amount]) => amount > 0)
+      .sort(([a], [b]) => a.localeCompare(b));
+    const totalWeight = positiveWeights.reduce((sum, [, amount]) => sum + amount, 0);
+    if (!totalWeight) return;
+
+    const payableCents = cents(statement.netPayable);
+    let remainingCents = payableCents;
+    positiveWeights.forEach(([location, weight], index) => {
+      const allocation = index === positiveWeights.length - 1
+        ? remainingCents
+        : Math.floor((payableCents * weight) / totalWeight);
+      remainingCents -= allocation;
+      if (!locationId || location === String(locationId)) totalCents += allocation;
+    });
+  });
+  return money(totalCents);
+}
+
+async function getDashboard({ now = new Date(), lowStockThreshold, locationId = null } = {}) {
   const { dayStart, dayEnd, monthStart, monthEnd } = dhakaBounds(now);
   lowStockThreshold = await resolveLowStockThreshold(lowStockThreshold);
-  const [orders, ledger, statements, expenses, recent, lowStock] = await Promise.all([
-    Order.find({ paymentStatus: 'PAID' }).lean(),
-    VendorLedger.find({}).lean(),
+  const activeLocations = await Location.find({
+    type: { $in: ['CENTRAL', 'OUTLET'] }, isActive: { $ne: false },
+  }).select('_id').lean();
+  const activeLocationIds = activeLocations.map((location) => String(location._id));
+  const scopeLocationIds = locationId ? [String(locationId)] : activeLocationIds;
+  const sourceLocationFilter = locationId || { $in: activeLocations.map((location) => location._id) };
+  const [orders, allOrders, statements, expenses, recent, lowStock] = await Promise.all([
+    Order.find({ paymentStatus: 'PAID', outlet: sourceLocationFilter }).lean(),
+    Order.find({ outlet: { $in: activeLocations.map((location) => location._id) } }).select('_id outlet').lean(),
     VendorStatement.find({ status: 'Approved' }).lean(),
-    Expense.find({}).lean(),
+    Expense.find({ locationId: sourceLocationFilter }).lean(),
     AuditLog.find({}).sort({ createdAt: -1 }).lean(),
-    lowStockAlerts(lowStockThreshold),
+    lowStockAlerts(lowStockThreshold, { locationId, allLocations: true }),
   ]);
 
+  const ledger = await VendorLedger.find({
+    $or: [
+      { locationId: { $in: activeLocations.map((location) => location._id) } },
+      { orderId: { $in: allOrders.map((order) => order._id) } },
+    ],
+  }).lean();
+  const orderLocations = new Map(allOrders.map((order) => [String(order._id), order.outlet]));
+  const allLocationLedger = ledger.filter((entry) => activeLocationIds.includes(
+    String(locationOfLedgerEntry(entry, orderLocations)),
+  ));
+  const scopedLedger = locationId
+    ? allLocationLedger.filter((entry) => scopeLocationIds.includes(
+      String(locationOfLedgerEntry(entry, orderLocations)),
+    ))
+    : allLocationLedger;
   const today = orders.filter((order) => soldTime(order) >= dayStart.getTime()
     && soldTime(order) < dayEnd.getTime());
   const todayByMethod = {};
@@ -109,10 +195,11 @@ async function getDashboard({ now = new Date(), lowStockThreshold } = {}) {
   }));
   const monthExpenses = expenses.filter((expense) => new Date(expense.expenseDate) >= monthStart
     && new Date(expense.expenseDate) < monthEnd);
+  const visibleRecent = locationId ? recent.filter((log) => auditLogHasLocation(log, locationId)) : recent;
 
   return {
     totalSales: money(sumCents(orders, (order) => order.grandTotal)),
-    marginIncome: money(sumCents(ledger, (entry) => entry.companyNet)),
+    marginIncome: money(sumCents(scopedLedger, (entry) => entry.companyNet)),
     todaySales: money(sumCents(today, (order) => order.grandTotal)),
     todayBillCount: today.length,
     todayByPaymentMethod: Object.fromEntries(
@@ -122,11 +209,11 @@ async function getDashboard({ now = new Date(), lowStockThreshold } = {}) {
     walletBillTotal: money(todayByMethod.WALLET || 0),
     lowStockThreshold,
     lowStockAlerts: lowStock,
-    recentActivity: recent.slice(0, RECENT_ACTIVITY_LIMIT).map((log) => ({
+    recentActivity: visibleRecent.slice(0, RECENT_ACTIVITY_LIMIT).map((log) => ({
       id: String(log._id), action: log.action, entity: log.entity, entityId: log.entityId || null,
       actorId: log.actorId || null, createdAt: log.createdAt,
     })),
-    vendorPayablesDue: money(sumCents(statements, (statement) => statement.netPayable)),
+    vendorPayablesDue: allocatedPayables(statements, allLocationLedger, orderLocations, locationId),
     monthExpenses: money(sumCents(monthExpenses, (expense) => expense.amount)),
     ...buildTrends(orders, expenses, now),
     generatedAt: now,

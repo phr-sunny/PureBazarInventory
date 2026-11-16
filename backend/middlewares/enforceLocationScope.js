@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 function createLocationScopeMiddleware({
   outletOnly = false,
   allowCentralLocationSelection = false,
+  locationQueryParam = null,
 } = {}) {
   return async function locationScopeMiddleware(req, res, next) {
     try {
@@ -18,9 +19,11 @@ function createLocationScopeMiddleware({
       const assignedLocationId = locationIdOf(req.user.locationId);
       const canSelectLocation = superAdmin
         || (allowCentralLocationSelection && req.user.location?.type === 'CENTRAL');
-      const selectedLocationId = outletOnly
-        ? req.query.selectedOutletId || null
-        : req.query.selectedOutletId || req.query.warehouseId || req.body?.warehouseId || null;
+      const selectedLocationId = locationQueryParam
+        ? req.query[locationQueryParam] || null
+        : outletOnly
+          ? req.query.selectedOutletId || null
+          : req.query.selectedOutletId || req.query.warehouseId || req.body?.warehouseId || null;
       const locationId = canSelectLocation && selectedLocationId
         ? selectedLocationId
         : (superAdmin ? null : assignedLocationId);
@@ -33,7 +36,7 @@ function createLocationScopeMiddleware({
         throw error;
       }
 
-      if (allowCentralLocationSelection && canSelectLocation && selectedLocationId) {
+      if ((allowCentralLocationSelection || locationQueryParam) && canSelectLocation && selectedLocationId) {
         if (!mongoose.isValidObjectId(locationId)) {
           const error = new Error('Select a valid location');
           error.status = 400;
@@ -86,5 +89,6 @@ const enforceLocationScope = createLocationScopeMiddleware();
 enforceLocationScope.forOutlet = createLocationScopeMiddleware({ outletOnly: true });
 enforceLocationScope.forStockRead = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
 enforceLocationScope.forStockCounts = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
+enforceLocationScope.forDashboard = createLocationScopeMiddleware({ locationQueryParam: 'locationId' });
 
 module.exports = enforceLocationScope;

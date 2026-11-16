@@ -4,6 +4,16 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 
 jest.mock('../models', () => {
+  const same = (left, right) => String(left?._id || left) === String(right?._id || right);
+  const matches = (document, filter) => Object.entries(filter).every(([key, condition]) => {
+    if (key === '$or') return condition.some((clause) => matches(document, clause));
+    const value = document[key];
+    if (condition && typeof condition === 'object' && !Array.isArray(condition)) {
+      if ('$in' in condition) return condition.$in.some((item) => same(value, item));
+      if ('$ne' in condition) return !same(value, condition.$ne);
+    }
+    return same(value, condition);
+  });
   const list = (items) => {
     const promise = Promise.resolve(items);
     promise.sort = () => promise;
@@ -13,8 +23,7 @@ jest.mock('../models', () => {
     return promise;
   };
   const collection = (name) => ({
-    find: jest.fn((filter = {}) => list(global.__db[name].filter((doc) => Object.entries(filter)
-      .every(([key, value]) => (value && value.$in ? value.$in.includes(doc[key]) : doc[key] === value))))),
+    find: jest.fn((filter = {}) => list(global.__db[name].filter((doc) => matches(doc, filter)))),
     findOne: jest.fn(() => ({ lean: async () => (global.__db[name] || [])[0] || null })),
   });
   return {
@@ -23,7 +32,7 @@ jest.mock('../models', () => {
     Order: collection('Order'),
     Product: collection('Product'),
     StockMovement: collection('StockMovement'),
-    Location: collection('Location'),
+    Location: { ...collection('Location'), findById: jest.fn() },
     VendorLedger: collection('VendorLedger'),
     VendorStatement: collection('VendorStatement'),
     Expense: collection('Expense'),
@@ -44,8 +53,9 @@ const at = (iso) => new Date(iso);
 
 const p1 = id(); const p2 = id(); const p3 = id(); const ghost = id();
 const outlet = id(); const central = id();
-const order = (grandTotal, payments, soldAt, paymentStatus = 'PAID') => ({
-  _id: id(), grandTotal, payments, soldAt: at(soldAt), paymentStatus,
+const vendor1 = id(); const vendor2 = id();
+const order = (grandTotal, payments, soldAt, paymentStatus = 'PAID', locationId = outlet) => ({
+  _id: id(), grandTotal, payments, soldAt: at(soldAt), paymentStatus, outlet: locationId,
 });
 
 function seed() {
@@ -61,18 +71,23 @@ function seed() {
       order(300.30, [{ method: 'CASH', amount: 300.30 }], '2026-03-09T23:59:00+06:00'),
       order(999, [{ method: 'CASH', amount: 999 }], '2026-03-10T10:00:00+06:00', 'REFUNDED'),
     ],
-    VendorLedger: [{ companyNet: 10.1 }, { companyNet: 20.2 }, { companyNet: -5.05 }],
+    VendorLedger: [
+      { vendorId: vendor1, orderId: id(), locationId: outlet, entryType: 'SALE', vendorPayable: 20, companyNet: 10.1, createdAt: at('2026-03-10T10:00:00+06:00') },
+      { vendorId: vendor2, orderId: id(), locationId: outlet, entryType: 'SALE', vendorPayable: 30, companyNet: 20.2, createdAt: at('2026-03-10T10:00:00+06:00') },
+      { vendorId: vendor2, orderId: id(), locationId: outlet, entryType: 'RETURN', vendorPayable: 10, companyNet: -5.05, createdAt: at('2026-03-10T10:00:00+06:00') },
+    ],
     VendorStatement: [
-      { status: 'Approved', netPayable: 500.55 }, { status: 'Approved', netPayable: 100.1 },
+      { vendorId: vendor1, periodStart: at('2026-03-01T00:00:00+06:00'), periodEnd: at('2026-03-31T23:59:59+06:00'), status: 'Approved', netPayable: 500.55 },
+      { vendorId: vendor2, periodStart: at('2026-03-01T00:00:00+06:00'), periodEnd: at('2026-03-31T23:59:59+06:00'), status: 'Approved', netPayable: 100.1 },
       { status: 'Paid', netPayable: 9999 }, { status: 'Draft', netPayable: 8888 },
     ],
     Expense: [
-      { amount: 40.1, expenseDate: at('2026-03-01T00:30:00+06:00') },
-      { amount: 60.2, expenseDate: at('2026-03-09T10:00:00+06:00') },
-      { amount: 7777, expenseDate: at('2026-02-28T23:00:00+06:00') },
-      { amount: 8888, expenseDate: at('2026-04-01T00:30:00+06:00') },
+      { amount: 40.1, locationId: outlet, expenseDate: at('2026-03-01T00:30:00+06:00') },
+      { amount: 60.2, locationId: outlet, expenseDate: at('2026-03-09T10:00:00+06:00') },
+      { amount: 7777, locationId: outlet, expenseDate: at('2026-02-28T23:00:00+06:00') },
+      { amount: 8888, locationId: outlet, expenseDate: at('2026-04-01T00:30:00+06:00') },
     ],
-    Location: [{ _id: outlet, type: 'OUTLET', name: 'Outlet-1' }, { _id: central, type: 'CENTRAL', name: 'Central Warehouse' }],
+    Location: [{ _id: outlet, type: 'OUTLET', name: 'Outlet-1', isActive: true }, { _id: central, type: 'CENTRAL', name: 'Central Warehouse', isActive: true }],
     StockMovement: [
       { productId: p1, warehouseId: outlet, quantity: 30 }, { productId: p1, warehouseId: outlet, quantity: -25 },
       { productId: p2, warehouseId: outlet, quantity: 50 }, { productId: p3, warehouseId: outlet, quantity: 10 },
@@ -116,9 +131,15 @@ describe('dashboard API', () => {
 
   it('lists low stock from movement totals and the latest 10 audit entries', async () => {
     const d = await getDashboard({ now });
-    expect(d.lowStockAlerts.map((a) => [a.productName, a.quantity])).toEqual([['Rice', 5]]);
-    expect((await getDashboard({ now, lowStockThreshold: 5 })).lowStockAlerts).toEqual([]);
-    expect((await getDashboard({ now, lowStockThreshold: 11 })).lowStockAlerts.map((a) => a.productName)).toEqual(['Rice', 'Salt']);
+    expect(d.lowStockAlerts.map((a) => [a.productName, a.quantity])).toEqual([
+      ['Oil', 0], ['Salt', 1], ['Rice', 5],
+    ]);
+    expect((await getDashboard({ now, lowStockThreshold: 5 })).lowStockAlerts.map((a) => a.locationName)).toEqual([
+      'Central Warehouse', 'Central Warehouse',
+    ]);
+    expect((await getDashboard({ now, lowStockThreshold: 11 })).lowStockAlerts.map((a) => [a.locationName, a.productName])).toEqual([
+      ['Central Warehouse', 'Oil'], ['Central Warehouse', 'Salt'], ['Outlet-1', 'Rice'], ['Outlet-1', 'Salt'],
+    ]);
     expect(d.recentActivity).toHaveLength(10);
     expect(d.recentActivity[0].action).toBe('act11');
     expect(d.recentActivity[9].action).toBe('act2');
@@ -132,14 +153,16 @@ describe('dashboard API', () => {
     expect(d.lowStockThreshold).toBe(20);
     const rice = d.lowStockAlerts.find((a) => a.productName === 'Rice');
     expect(rice.quantityLabel).toBe('7 Box 90 Pcs');
-    expect(d.lowStockAlerts.every((a) => a.locationName === 'Outlet-1')).toBe(true);
+    expect(d.lowStockAlerts.find((a) => a.productName === 'Rice').locationName).toBe('Outlet-1');
   });
 
-  it('checks the Central Warehouse only when its low stock toggle is enabled', async () => {
+  it('includes all locations in the dashboard while the alert helper keeps its central toggle', async () => {
     global.__db.Settings = [{ lowStockThreshold: 5, centralWarehouseLowStockEnabled: false }];
-    expect((await getDashboard({ now })).lowStockAlerts).toEqual([]);
+    expect((await getDashboard({ now })).lowStockAlerts.map((item) => item.locationName)).toEqual([
+      'Central Warehouse', 'Central Warehouse',
+    ]);
     global.__db.Settings = [{ lowStockThreshold: 5, centralWarehouseLowStockEnabled: true }];
-    const alerts = (await getDashboard({ now })).lowStockAlerts;
+    const alerts = await require('../services/dashboardService').lowStockAlerts(5);
     expect(alerts.map((a) => [a.locationName, a.productName])).toEqual([['Central Warehouse', 'Oil'], ['Central Warehouse', 'Salt']]);
   });
 
@@ -155,7 +178,8 @@ describe('dashboard API', () => {
       permissions = ['dashboard:read'];
       models.User.findById.mockImplementation(() => ({
         populate: jest.fn(async () => ({
-          _id: userId, isActive: true, roleId: { _id: userId, name: 'Super Admin', permissions },
+          _id: userId, isActive: true, locationId: null,
+          roleId: { _id: userId, name: 'Super Admin', permissions },
         })),
       }));
     });
@@ -172,6 +196,7 @@ describe('dashboard API', () => {
       expect(res.body.dashboard.totalSales).toBe(600.7);
       expect((await request(app).get('/api/dashboard?lowStockThreshold=-1').set(auth())).status).toBe(400);
     });
+
   });
 });
 

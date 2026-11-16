@@ -34,11 +34,11 @@ function methodTotals(orders) {
   return totals;
 }
 
-async function getCashierDashboard(user, now) {
+async function getCashierDashboard(user, now, locationId) {
   const { dayStart, dayEnd } = dhakaBounds(now);
   const [orders, shift, settings] = await Promise.all([
-    Order.find({ cashier: user._id, paymentStatus: 'PAID' }).lean(),
-    Shift.findOne({ cashierId: user._id, status: 'OPEN' }).lean(),
+    Order.find({ cashier: user._id, paymentStatus: 'PAID', ...(locationId ? { outlet: locationId } : {}) }).lean(),
+    Shift.findOne({ cashierId: user._id, status: 'OPEN', ...(locationId ? { outletId: locationId } : {}) }).lean(),
     Settings.findOne({}).lean(),
   ]);
   const mine = orders.filter((order) => String(order.cashier) === String(user._id));
@@ -85,13 +85,13 @@ async function getCashierDashboard(user, now) {
   };
 }
 
-async function getInventoryDashboard(now, thresholdInput) {
+async function getInventoryDashboard(now, thresholdInput, locationId) {
   const lowStockThreshold = await resolveLowStockThreshold(thresholdInput);
   const [alerts, pendingGrns, adjustments, movements, products] = await Promise.all([
-    lowStockAlerts(lowStockThreshold),
-    GoodsReceive.find({ status: 'Draft' }).lean(),
-    StockAdjustment.find({}).sort({ createdAt: -1 }).lean(),
-    StockMovement.find({ type: 'SALE' }).lean(),
+    lowStockAlerts(lowStockThreshold, { locationId, allLocations: true }),
+    GoodsReceive.find({ status: 'Draft', ...(locationId ? { warehouseId: locationId } : {}) }).lean(),
+    StockAdjustment.find(locationId ? { warehouseId: locationId } : {}).sort({ createdAt: -1 }).lean(),
+    StockMovement.find({ type: 'SALE', ...(locationId ? { warehouseId: locationId } : {}) }).lean(),
     Product.find({}).select('name barcode').lean(),
   ]);
   const since = now.getTime() - FAST_MOVING_DAYS * 24 * 60 * 60 * 1000;
@@ -149,12 +149,12 @@ const FINANCE_KEYS = ['totalSales', 'marginIncome', 'vendorPayablesDue', 'monthE
 const SECTION_KEYS = { sales: SALES_KEYS, inventory: INVENTORY_KEYS, finance: FINANCE_KEYS };
 
 // Custom roles with dashboard:read inherit cards for the modules they can read.
-async function getModuleDashboard(user, now, lowStockThreshold) {
+async function getModuleDashboard(user, now, lowStockThreshold, locationId) {
   const granted = new Set(expandPermissions(user?.permissions || []));
   const sections = Object.keys(MODULE_PERMISSIONS)
     .filter((name) => MODULE_PERMISSIONS[name].some((permission) => granted.has(permission)));
   if (!sections.length) return { view: 'general', generatedAt: now };
-  const full = await getDashboard({ now, lowStockThreshold });
+  const full = await getDashboard({ now, lowStockThreshold, locationId });
   const dashboard = { view: 'general', sections, recentActivity: full.recentActivity, generatedAt: now };
   sections.forEach((name) => SECTION_KEYS[name].forEach((key) => {
     if (key in full) dashboard[key] = full[key];
@@ -162,12 +162,12 @@ async function getModuleDashboard(user, now, lowStockThreshold) {
   return dashboard;
 }
 
-async function getDashboardForUser(user, { now = new Date(), lowStockThreshold } = {}) {
+async function getDashboardForUser(user, { now = new Date(), lowStockThreshold, locationId = null } = {}) {
   const view = resolveDashboardView(user);
-  if (view === 'admin') return { view, ...(await getDashboard({ now, lowStockThreshold })) };
-  if (view === 'cashier') return getCashierDashboard(user, now);
-  if (view === 'inventory') return getInventoryDashboard(now, lowStockThreshold);
-  return getModuleDashboard(user, now, lowStockThreshold);
+  if (view === 'admin') return { view, ...(await getDashboard({ now, lowStockThreshold, locationId })) };
+  if (view === 'cashier') return getCashierDashboard(user, now, locationId);
+  if (view === 'inventory') return getInventoryDashboard(now, lowStockThreshold, locationId);
+  return getModuleDashboard(user, now, lowStockThreshold, locationId);
 }
 
 module.exports = { getDashboardForUser, resolveDashboardView };

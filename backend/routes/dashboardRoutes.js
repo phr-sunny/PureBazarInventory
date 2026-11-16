@@ -4,14 +4,19 @@ const { getDashboardForUser } = require('../services/roleDashboardService');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 
 const router = express.Router();
 
-router.get('/', authMiddleware, authorizeMiddleware({ permissions: ['dashboard:read'] }), [
+router.get('/', authMiddleware, authorizeMiddleware({ permissions: ['dashboard:read'] }), enforceLocationScope.forDashboard, [
+  query('locationId').optional().isMongoId().withMessage('Location must be a valid ID'),
   query('lowStockThreshold').optional().isFloat({ min: 0 }).withMessage('Threshold must be 0 or more').toFloat(),
 ], validateRequest, async (req, res, next) => {
   try {
-    const dashboard = await getDashboardForUser(req.user, { lowStockThreshold: req.query.lowStockThreshold });
+    const dashboard = await getDashboardForUser(req.user, {
+      lowStockThreshold: req.query.lowStockThreshold,
+      locationId: req.locationId,
+    });
     return res.json({ success: true, dashboard });
   } catch (error) {
     return next(error);

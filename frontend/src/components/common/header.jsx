@@ -8,13 +8,48 @@ import Button from '@/components/ui/button';
 import NotificationBell from './notification-bell';
 import LanguageSwitcher from './language-switcher';
 import { useLanguage } from '@/i18n/language-provider';
+import { getDashboardLocations } from '@/services/dashboard';
+
+const DASHBOARD_LOCATION_KEY = 'purebazar.dashboardLocationId';
 
 export default function Header({ section, onMenuClick }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const wrapRef = useRef(null);
   const [logoutError, setLogoutError] = useState('');
-  const { user, logout, status, canAccess } = useAuth();
+  const { user, token, logout, status, canAccess } = useAuth();
   const { t } = useLanguage();
+  const [locations, setLocations] = useState([]);
+  const [locationId, setLocationId] = useState('all');
+  const [locationError, setLocationError] = useState('');
+  const isSuperAdmin = user?.role === 'Super Admin';
+
+  useEffect(() => {
+    if (!isSuperAdmin || !token) {
+      setLocations([]);
+      setLocationError('');
+      return undefined;
+    }
+    setLocationId(window.sessionStorage.getItem(DASHBOARD_LOCATION_KEY) || 'all');
+    setLocationError('');
+    let active = true;
+    getDashboardLocations(token)
+      .then(({ data }) => {
+        if (active) setLocations((data.locations || []).filter((location) => (
+          location.isActive && ['CENTRAL', 'OUTLET'].includes(location.type)
+        )));
+      })
+      .catch(() => {
+        if (active) setLocationError(t('Unable to load locations.'));
+      });
+    return () => { active = false; };
+  }, [isSuperAdmin, t, token]);
+
+  function changeLocation(event) {
+    const selected = event.target.value;
+    setLocationId(selected);
+    window.sessionStorage.setItem(DASHBOARD_LOCATION_KEY, selected);
+    window.dispatchEvent(new CustomEvent('purebazar:dashboard-location-change', { detail: selected }));
+  }
 
   useEffect(() => {
     if (!userMenuOpen) return undefined;
@@ -46,6 +81,24 @@ export default function Header({ section, onMenuClick }) {
         </div>
       </div>
       <div className="header-actions">
+      {isSuperAdmin ? (
+        <>
+          <label className="header-location">
+            <span className="sr-only">{t('Dashboard location')}</span>
+            <select aria-label={t('Dashboard location')} value={locationId} onChange={changeLocation}>
+              <option value="all">{t('All')}</option>
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>{location.name}</option>
+              ))}
+            </select>
+          </label>
+          {locationError && <span className="header-location-error" role="alert">{locationError}</span>}
+        </>
+      ) : user?.location?.name ? (
+        <span className="header-location-readonly" aria-label={t('Location')}>
+          {user.location.name}
+        </span>
+      ) : null}
       <LanguageSwitcher />
       {canAccess(['stock:read']) || canAccess(['stock:transfer:read']) ? <NotificationBell /> : null}
       <div className="user-menu-wrap" ref={wrapRef}>
