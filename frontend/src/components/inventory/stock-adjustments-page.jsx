@@ -25,6 +25,8 @@ export default function StockAdjustmentsPage() {
   const canRead = can(permissions, 'stock:read');
   const canWrite = can(permissions, 'stock:write');
   const canReadProducts = can(permissions, 'products:read');
+  const isSuperAdmin = user?.role === 'Super Admin';
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
   const [adjustments, setAdjustments] = useState([]);
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
@@ -56,15 +58,19 @@ export default function StockAdjustmentsPage() {
     ])
       .then(([locationResponse, adjustmentResponse]) => {
         if (!active) return;
-        const availableLocations = locationResponse.data.locations.filter((item) => item.isActive !== false);
+        const availableLocations = locationResponse.data.locations.filter((item) => (
+          item.isActive !== false && (isSuperAdmin || item.id === assignedLocationId)
+        ));
         setLocations(availableLocations);
-        setWarehouseId(availableLocations[0]?.id || '');
+        const defaultLocation = availableLocations.find((item) => item.id === assignedLocationId)
+          || availableLocations[0];
+        setWarehouseId(defaultLocation?.id || '');
         setAdjustments(adjustmentResponse.data.stockAdjustments);
       })
       .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock adjustments.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, permissions, token]);
+  }, [assignedLocationId, canRead, initialized, isSuperAdmin, permissions, token]);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const reasonMismatch = (
@@ -235,15 +241,19 @@ export default function StockAdjustmentsPage() {
         <Card title="New adjustment" description="Enter positive quantities; the selected mode determines whether stock is added or removed.">
           <form className="space-y-4" onSubmit={submit}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Select label="Warehouse or outlet" name="warehouseId" value={warehouseId} onChange={(event) => {
-                setWarehouseId(event.target.value);
-                setLines([]);
-                setSearch('');
-                setMatches([]);
-              }}>
-                <option value=""><T>{"Choose a location"}</T></option>
-                {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-              </Select>
+              {isSuperAdmin ? (
+                <Select label="Warehouse or outlet" name="warehouseId" value={warehouseId} onChange={(event) => {
+                  setWarehouseId(event.target.value);
+                  setLines([]);
+                  setSearch('');
+                  setMatches([]);
+                }}>
+                  <option value=""><T>{"Choose a location"}</T></option>
+                  {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                </Select>
+              ) : (
+                <Input label="Location" name="warehouseId" value={locations.find((item) => item.id === warehouseId)?.name || user?.location?.name || ''} readOnly />
+              )}
               <Select label="Adjustment mode" name="mode" value={mode} onChange={(event) => setMode(event.target.value)}>
                 <option value="REMOVE"><T>{"Remove stock"}</T></option>
                 <option value="ADD"><T>{"Add stock"}</T></option>

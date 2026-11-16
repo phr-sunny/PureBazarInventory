@@ -67,15 +67,18 @@ const stockReason = body('reason').isString().trim().isLength({ min: 1, max: 500
   .withMessage('A reason of 1 to 500 characters is required');
 const adminApproval = [authMiddleware, authorizeMiddleware({ roles: ['Super Admin'] })];
 
-router.get('/stock', scopedRead, [
+router.get('/stock', [...read, enforceLocationScope.forStockRead], [
   query('warehouseId').isMongoId().withMessage('A valid warehouse ID is required'),
 ], validateRequest, stockController.getWarehouseStock);
+router.get('/inventory/outlet-products', [...read, enforceLocationScope.forStockRead], [
+  query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
+], validateRequest, stockController.getOutletProducts);
 router.get('/stock-adjustments', read, [
   query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
   query('status').optional().isIn(['Draft', 'Pending', 'Approved', 'Rejected'])
     .withMessage('A valid adjustment status is required'),
 ], validateRequest, stockAdjustmentController.listAdjustments);
-router.post('/stock-adjustments', write, [
+router.post('/stock-adjustments', [...write, enforceLocationScope], [
   stockLocation,
   stockReason,
   adjustmentMode,
@@ -93,28 +96,28 @@ router.post('/stock-adjustments/:id/approve', adminApproval, [
 router.post('/stock-adjustments/:id/reject', adminApproval, [
   adjustmentId,
 ], validateRequest, stockAdjustmentController.rejectAdjustment);
-router.get('/stock-counts', read, [
+router.get('/stock-counts', [...read, enforceLocationScope.forStockCounts], [
   query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
   query('status').optional().isIn(['Draft', 'Counting', 'PendingApproval', 'Posted', 'Rejected'])
     .withMessage('A valid stock count status is required'),
 ], validateRequest, stockCountController.listCounts);
-router.post('/stock-counts', write, [
+router.post('/stock-counts', [...write, enforceLocationScope.forStockCounts], [
   stockLocation,
   stockReason,
   countLines,
   countProducts,
   countQuantities,
 ], validateRequest, stockCountController.createCount);
-router.post('/stock-counts/:id/post', write, [
+router.post('/stock-counts/:id/post', [...write, enforceLocationScope.forStockCounts], [
   countId,
 ], validateRequest, stockCountController.postCount);
 router.get('/stock-transfers', [
-  authMiddleware, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
   query('status').optional().isIn(['Requested', 'Dispatched', 'Received', 'Discrepancy'])
     .withMessage('A valid transfer status is required'),
 ], validateRequest, stockTransferController.listTransfers);
 router.post('/stock-transfers', [
-  authMiddleware, authorizeMiddleware({ permissions: ['stock:transfer:write'] }),
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:write'] }),
   body('fromWarehouseId').isMongoId().withMessage('A valid source warehouse ID is required'),
   body('toWarehouseId').isMongoId().withMessage('A valid destination outlet ID is required'),
   transferLines,
@@ -123,11 +126,11 @@ router.post('/stock-transfers', [
     .withMessage('Requested quantity must be a positive whole number'),
 ], validateRequest, stockTransferController.createTransfer);
 router.get('/stock-transfers/:id', [
-  authMiddleware, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
   transferId,
 ], validateRequest, stockTransferController.getTransfer);
 router.post('/stock-transfers/:id/dispatch', [
-  authMiddleware, authorizeMiddleware({ permissions: ['stock:transfer:write'] }),
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:write'] }),
   transferId,
   transferLines,
   transferProduct,
@@ -135,14 +138,14 @@ router.post('/stock-transfers/:id/dispatch', [
     .withMessage('Dispatched quantity must be zero or greater'),
 ], validateRequest, stockTransferController.dispatchTransfer);
 router.post('/stock-transfers/:id/receive', [
-  authMiddleware, authorizeMiddleware({ permissions: ['stock:transfer:receive'] }),
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:receive'] }),
   transferId,
   transferLines,
   transferProduct,
   body('lines.*.receivedQuantity').isFloat({ min: 0 }).toFloat()
     .withMessage('Received quantity must be zero or greater'),
 ], validateRequest, stockTransferController.receiveTransfer);
-router.get('/stock/products', read, [
+router.get('/stock/products', scopedRead, [
   query('ownerType').optional().isIn(['COMPANY', 'VENDOR']).withMessage('Owner type must be COMPANY or VENDOR'),
   query('vendorId').if(query('ownerType').equals('VENDOR')).isMongoId()
     .withMessage('Vendor purchases require a valid vendor ID'),

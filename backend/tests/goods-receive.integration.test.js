@@ -224,6 +224,22 @@ describe('goods receive and movement-derived stock endpoints', () => {
     expect(GoodsReceive.find).toHaveBeenCalledWith({ warehouseId: outletId });
   });
 
+  it('keeps central warehouse GRNs at the assigned warehouse when an outlet is submitted', async () => {
+    const draft = await request(app).post('/api/goods-receives').set(auth).send({
+      ownerType: 'COMPANY',
+      warehouseId: outletId,
+      lines: [{ productId, receivedQuantity: 4, acceptedQuantity: 4, rejectedQuantity: 0 }],
+    });
+    expect(draft.status).toBe(201);
+    expect(draft.body.goodsReceive.warehouseId).toBe(warehouseId);
+
+    const approved = await request(app)
+      .post(`/api/goods-receives/${draft.body.goodsReceive.id}/approve`).set(auth);
+    expect(approved.status).toBe(200);
+    expect(movements).toHaveLength(1);
+    expect(movements[0].warehouseId.toString()).toBe(warehouseId);
+  });
+
   it('locks an outlet user to their location and receives directly without transfer permission', async () => {
     currentUser = {
       ...admin,

@@ -154,13 +154,21 @@ describe('stock transfer API', () => {
     });
     StockTransfer.find.mockImplementation((filter) => query(
       [...transfers.values()].filter((transfer) => Object.entries(filter).every(([key, value]) => (
-        transfer[key]?.toString() === value.toString()
+        key === '$or'
+          ? value.some((condition) => Object.entries(condition).every(([field, id]) => (
+            transfer[field]?.toString() === id.toString()
+          )))
+          : transfer[key]?.toString() === value.toString()
       ))).map(cloneTransfer),
     ));
     StockTransfer.findOne.mockImplementation((filter) => {
       const transfer = transfers.get(filter._id.toString());
       const matches = transfer && Object.entries(filter).every(([key, value]) => (
-        transfer[key]?.toString() === value.toString()
+        key === '$or'
+          ? value.some((condition) => Object.entries(condition).every(([field, id]) => (
+            transfer[field]?.toString() === id.toString()
+          )))
+          : transfer[key]?.toString() === value.toString()
       ));
       return query(matches ? transfer : null);
     });
@@ -203,7 +211,9 @@ describe('stock transfer API', () => {
 
     const warehouseList = await request(app).get('/api/stock-transfers').set(auth(warehouseUserId));
     expect(warehouseList.body.stockTransfers).toHaveLength(1);
-    expect(StockTransfer.find).toHaveBeenCalledWith({});
+    expect(StockTransfer.find).toHaveBeenCalledWith({
+      $or: [{ fromWarehouseId: expect.anything() }, { toWarehouseId: expect.anything() }],
+    });
 
     currentUser = {
       _id: outletUserId,
@@ -220,7 +230,9 @@ describe('stock transfer API', () => {
 
     const outletList = await request(app).get('/api/stock-transfers').set(auth(outletUserId));
     expect(outletList.body.stockTransfers).toHaveLength(1);
-    expect(StockTransfer.find).toHaveBeenCalledWith({});
+    expect(StockTransfer.find).toHaveBeenLastCalledWith({
+      $or: [{ fromWarehouseId: expect.anything() }, { toWarehouseId: expect.anything() }],
+    });
 
     currentUser = {
       _id: warehouseUserId,
@@ -251,7 +263,7 @@ describe('stock transfer API', () => {
     expect(totalStock()).toBe(50);
   });
 
-  it('records a receipt shortage as a discrepancy and ignores the assigned location', async () => {
+  it('records a receipt shortage and blocks access from an unrelated outlet', async () => {
     const requested = await createRequestedTransfer(8);
     const id = requested.body.stockTransfer.id;
     const dispatched = await request(app).post(`/api/stock-transfers/${id}/dispatch`)
@@ -277,7 +289,10 @@ describe('stock transfer API', () => {
 
     currentUser.locationId = new mongoose.Types.ObjectId(otherOutletId);
     const visible = await request(app).get(`/api/stock-transfers/${id}`).set(auth(outletUserId));
-    expect(visible.status).toBe(200);
+    const wrongOutletReceipt = await request(app).post(`/api/stock-transfers/${id}/receive`)
+      .set(auth(outletUserId)).send({ lines: [{ productId, receivedQuantity: 6 }] });
+    expect(visible.status).toBe(404);
+    expect(wrongOutletReceipt.status).toBe(404);
   });
 
   it('rejects a request greater than Central Warehouse stock', async () => {
@@ -306,6 +321,14 @@ describe('stock transfer API', () => {
       roleId: { name: 'Outlet Cashier', permissions: ['stock:transfer:read', 'stock:transfer:receive'] },
       locationId: new mongoose.Types.ObjectId(outletId),
     };
+    const outletRequest = await request(app).post('/api/stock-transfers')
+      .set(auth(outletUserId)).send({
+        fromWarehouseId: centralId,
+        toWarehouseId: outletId,
+        lines: [{ productId, requestedQuantity: 1 }],
+      });
+    expect(outletRequest.status).toBe(403);
+
     const wrongSide = await request(app).post(`/api/stock-transfers/${id}/dispatch`)
       .set(auth(outletUserId)).send({ lines: [{ productId, dispatchedQuantity: 6 }] });
     expect(wrongSide.status).toBe(403);

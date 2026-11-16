@@ -8,7 +8,7 @@ const permissionCatalog = [
     ['products:write', 'categories:write', 'brands:write', 'units:write']),
   page('inventory.grn', ['stock:read'], ['stock:write']),
   page('inventory.transfers', ['stock:transfer:read'], ['stock:transfer:write', 'stock:transfer:receive']),
-  page('inventory.warehouse', ['warehouse:read'], ['warehouse:write']),
+  page('inventory.warehouse', ['stock:read'], ['stock:write']),
   page('inventory.adjustments', ['stock:read'], ['stock:write']),
   page('inventory.counts', ['stock:read'], ['stock:write']),
   page('inventory.barcodes', ['products:read'], []),

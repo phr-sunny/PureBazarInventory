@@ -6,6 +6,7 @@ const common = {
   'Goods Receive / GRN': 'পণ্য গ্রহণ / জিআরএন',
   'Outlet Transfers': 'আউটলেট ট্রান্সফার',
   'Central Warehouse': 'কেন্দ্রীয় গুদাম',
+  'Outlet Inventory': 'আউটলেট ইনভেন্টরি',
   'Stock Adjustment': 'স্টক সমন্বয়',
   'Stock Count': 'স্টক গণনা',
   'Barcode & Labels': 'বারকোড ও লেবেল',

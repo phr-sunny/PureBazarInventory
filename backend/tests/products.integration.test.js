@@ -121,16 +121,17 @@ describe('product endpoints', () => {
     }));
     const created = await request(app).post('/api/products').set(auth).send({
       name: 'Rice', categoryId, unitId, ownerType: 'COMPANY', vendorPrice: 95, mrp: 100,
-      vatApplicable: true, vatRate: 5,
+      sku: 'RICE-001', vatApplicable: true, vatRate: 5,
     });
 
     expect(invalid.status).toBe(400);
     expect(Product.create).toHaveBeenCalledTimes(1);
     expect(Product.create).toHaveBeenCalledWith(expect.objectContaining({
-      ownerType: 'COMPANY', vendorPrice: 95, mrp: 100, vatApplicable: true, vatRate: 5,
+      ownerType: 'COMPANY', vendorPrice: 95, mrp: 100, sku: 'RICE-001', vatApplicable: true, vatRate: 5,
     }));
     expect(created.status).toBe(201);
     expect(created.body.product.barcode).toBeTruthy();
+    expect(created.body.product.sku).toBe('RICE-001');
     expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
       action: 'CREATE', entity: 'Product',
     }));

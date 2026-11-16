@@ -21,7 +21,7 @@ export const permissionGroups = [
         ['products:write', 'categories:write', 'brands:write', 'units:write']),
       row('inventory.grn', 'Goods Receive (GRN)', ['stock:read'], ['stock:write']),
       row('inventory.transfers', 'Outlet Transfers', ['stock:transfer:read'], ['stock:transfer:write', 'stock:transfer:receive']),
-      row('inventory.warehouse', 'Central Warehouse', ['warehouse:read'], ['warehouse:write']),
+      row('inventory.warehouse', 'Central Warehouse', ['stock:read'], ['stock:write']),
       row('inventory.adjustments', 'Stock Adjustment', ['stock:read'], ['stock:write']),
       row('inventory.counts', 'Stock Count', ['stock:read'], ['stock:write']),
       row('inventory.barcodes', 'Barcode & Labels', ['products:read']),

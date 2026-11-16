@@ -3,6 +3,7 @@ const {
   AuditLog, Location, Product, StockMovement, StockTransfer,
 } = require('../models');
 const { unitLabelMap } = require('../utils/productDisplay');
+const { isSuperAdmin } = require('../utils/locationScope');
 
 function statusError(message, status) {
   const error = new Error(message);
@@ -10,17 +11,24 @@ function statusError(message, status) {
   return error;
 }
 
-// Access is purely role/permission based (route guards); assigned location is ignored.
-function locationFilter() {
-  return {};
+function locationFilter(req) {
+  if (isSuperAdmin(req.user)) return {};
+  return {
+    $or: [
+      { fromWarehouseId: req.locationId },
+      { toWarehouseId: req.locationId },
+    ],
+  };
 }
 
-function canManageSource() {
-  return true;
+function canManageSource(req, locationId) {
+  return isSuperAdmin(req.user)
+    || Boolean(req.locationId && req.locationId.toString() === locationId.toString());
 }
 
-function canReceive() {
-  return true;
+function canReceive(req, locationId) {
+  return isSuperAdmin(req.user)
+    || Boolean(req.locationId && req.locationId.toString() === locationId.toString());
 }
 
 function normalizeRequestedLines(lines) {
@@ -78,8 +86,8 @@ async function transferOutputs(transfers) {
   return items.map((transfer) => transferOutput(transfer, productsById));
 }
 
-async function loadScopedTransfer(id, user, session) {
-  let query = StockTransfer.findOne({ _id: id, ...locationFilter(user) });
+async function loadScopedTransfer(id, req, session) {
+  let query = StockTransfer.findOne({ _id: id, ...locationFilter(req) });
   if (session) query = query.session(session);
   const transfer = await query;
   if (!transfer) throw statusError('Stock transfer not found', 404);
@@ -90,7 +98,7 @@ async function createTransfer(req, res, next) {
   let session;
   try {
     const { fromWarehouseId, toWarehouseId } = req.body;
-    if (!canManageSource(req.user, fromWarehouseId)) {
+    if (!canManageSource(req, fromWarehouseId)) {
       throw statusError('You can only create transfers from your assigned warehouse', 403);
     }
     if (fromWarehouseId === toWarehouseId) throw statusError('Transfer locations must be different', 400);
@@ -99,7 +107,8 @@ async function createTransfer(req, res, next) {
       Location.findById(fromWarehouseId).lean(),
       Location.findById(toWarehouseId).lean(),
     ]);
-    if (!from || from.type !== 'CENTRAL' || !to || to.type !== 'OUTLET') {
+    if (!from || from.isActive === false || from.type !== 'CENTRAL'
+      || !to || to.isActive === false || to.type !== 'OUTLET') {
       throw statusError('Transfers must move stock from a central warehouse to an outlet', 400);
     }
 
@@ -158,7 +167,7 @@ async function createTransfer(req, res, next) {
 
 async function listTransfers(req, res, next) {
   try {
-    const filter = locationFilter(req.user);
+    const filter = locationFilter(req);
     if (req.query.status) filter.status = req.query.status;
     const transfers = await StockTransfer.find(filter).sort({ createdAt: -1 }).lean();
     return res.json({ success: true, stockTransfers: await transferOutputs(transfers) });
@@ -169,7 +178,7 @@ async function listTransfers(req, res, next) {
 
 async function getTransfer(req, res, next) {
   try {
-    const transfer = await loadScopedTransfer(req.params.id, req.user);
+    const transfer = await loadScopedTransfer(req.params.id, req);
     const [output] = await transferOutputs([transfer]);
     return res.json({ success: true, stockTransfer: output });
   } catch (error) {
@@ -183,8 +192,8 @@ async function dispatchTransfer(req, res, next) {
     session = await mongoose.startSession();
     let output;
     await session.withTransaction(async () => {
-      const transfer = await loadScopedTransfer(req.params.id, req.user, session);
-      if (!canManageSource(req.user, transfer.fromWarehouseId)) {
+      const transfer = await loadScopedTransfer(req.params.id, req, session);
+      if (!canManageSource(req, transfer.fromWarehouseId)) {
         throw statusError('Only the source warehouse can dispatch this transfer', 403);
       }
       if (transfer.status !== 'Requested') throw statusError('Only requested transfers can be dispatched', 409);
@@ -254,8 +263,8 @@ async function receiveTransfer(req, res, next) {
     session = await mongoose.startSession();
     let output;
     await session.withTransaction(async () => {
-      const transfer = await loadScopedTransfer(req.params.id, req.user, session);
-      if (!canReceive(req.user, transfer.toWarehouseId)) {
+      const transfer = await loadScopedTransfer(req.params.id, req, session);
+      if (!canReceive(req, transfer.toWarehouseId)) {
         throw statusError('Only the receiving outlet can confirm this transfer', 403);
       }
       if (transfer.status !== 'Dispatched') throw statusError('Only dispatched transfers can be received', 409);

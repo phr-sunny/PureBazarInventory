@@ -4,7 +4,7 @@ const {
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 
 const editableFields = [
-  'name', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
+  'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
   'vendorPrice', 'mrp', 'vatApplicable', 'vatRate', 'unitsPerPackage', 'subUnitPriceOverride',
 ];
 const creationFields = editableFields.filter((field) => field !== 'unitValue');
@@ -34,7 +34,7 @@ function productData(product) {
 function productSnapshot(product) {
   const data = productData(product);
   return Object.fromEntries([
-    'name', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
+    'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
     'vendorPrice', 'mrp', 'margin', 'vatApplicable', 'vatRate', 'barcode',
     'unitsPerPackage', 'subUnitPriceOverride', 'subUnitPrice',
   ].filter((field) => data[field] !== undefined)

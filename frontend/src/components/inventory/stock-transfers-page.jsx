@@ -33,7 +33,9 @@ export default function StockTransfersPage() {
   const canRead = can(permissions, 'stock:transfer:read');
   const canWrite = can(permissions, 'stock:transfer:write');
   const canReceive = can(permissions, 'stock:transfer:receive');
-  const canChooseSource = ['Super Admin', 'Inventory Manager'].includes(user?.role);
+  const isSuperAdmin = user?.role === 'Super Admin';
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+  const canChooseSource = isSuperAdmin || user?.location?.type === 'CENTRAL';
   const [transfers, setTransfers] = useState([]);
   const [locations, setLocations] = useState([]);
   const [sourceId, setSourceId] = useState('');
@@ -57,10 +59,11 @@ export default function StockTransfersPage() {
     Promise.all([getStockTransfers(token), getLocations(token)])
       .then(([transferResponse, locationResponse]) => {
         if (!active) return;
-        const availableLocations = locationResponse.data.locations;
+        const availableLocations = locationResponse.data.locations.filter((location) => location.isActive !== false);
         setTransfers(transferResponse.data.stockTransfers);
         setLocations(availableLocations);
-        setSourceId(availableLocations.find(({ type }) => type === 'CENTRAL')?.id || '');
+        setSourceId(availableLocations.find(({ id }) => id === assignedLocationId)?.id
+          || availableLocations.find(({ type }) => type === 'CENTRAL')?.id || '');
         setOutletId(availableLocations.find(({ type, isActive }) => type === 'OUTLET' && isActive !== false)?.id || '');
       })
       .catch((requestError) => active && setError(
@@ -68,7 +71,7 @@ export default function StockTransfersPage() {
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, canWrite, initialized, permissions, token]);
+  }, [assignedLocationId, canRead, canWrite, initialized, permissions, token]);
   const locationsById = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
   const visibleTransfers = useMemo(() => transfers.filter((transfer) => (
     !statusFilter || transfer.status === statusFilter
@@ -76,6 +79,12 @@ export default function StockTransfersPage() {
   const selectedTransfer = transfers.find(({ id }) => id === selectedId);
   const sourceLocations = locations.filter(({ type }) => type === 'CENTRAL');
   const outletLocations = locations.filter(({ type, isActive }) => type === 'OUTLET' && isActive !== false);
+  const canDispatchSelected = Boolean(selectedTransfer && canWrite && (
+    isSuperAdmin || assignedLocationId === selectedTransfer.fromWarehouseId
+  ));
+  const canReceiveSelected = Boolean(selectedTransfer && canReceive && (
+    isSuperAdmin || assignedLocationId === selectedTransfer.toWarehouseId
+  ));
 
   function selectTransfer(transfer) {
     setSelectedId(transfer.id);
@@ -176,7 +185,7 @@ export default function StockTransfersPage() {
         <p className="mt-1 text-sm text-slate-600"><T>{"Request stock, dispatch from the central warehouse, and confirm outlet deliveries."}</T></p>
       </div>
 
-      {canWrite && (
+      {canWrite && canChooseSource && (
         <StockTransferRequestForm
           token={token}
           permissions={permissions}
@@ -212,8 +221,8 @@ export default function StockTransfersPage() {
           <form className="space-y-4" onSubmit={submitWorkflow}>
             <div className="space-y-3">
               {selectedTransfer.lines.map((line) => {
-                const editable = (selectedTransfer.status === 'Requested' && canWrite)
-                  || (selectedTransfer.status === 'Dispatched' && canReceive);
+                const editable = (selectedTransfer.status === 'Requested' && canDispatchSelected)
+                  || (selectedTransfer.status === 'Dispatched' && canReceiveSelected);
                 const quantityName = selectedTransfer.status === 'Requested' ? 'Dispatch quantity' : 'Received quantity';
                 const currentQuantity = selectedTransfer.status === 'Requested'
                   ? line.dispatchedQuantity
@@ -239,13 +248,13 @@ export default function StockTransfersPage() {
                 );
               })}
             </div>
-            {selectedTransfer.status === 'Requested' && canWrite && (
+            {selectedTransfer.status === 'Requested' && canDispatchSelected && (
               <div className="flex justify-end"><Button type="submit" disabled={saving}><ArrowUpFromLine size={16} /> {saving ? 'Dispatching...' : 'Dispatch transfer'}</Button></div>
             )}
-            {selectedTransfer.status === 'Dispatched' && canReceive && (
+            {selectedTransfer.status === 'Dispatched' && canReceiveSelected && (
               <div className="flex justify-end"><Button type="submit" disabled={saving}><ArrowDownToLine size={16} /> {saving ? 'Confirming...' : 'Confirm outlet receipt'}</Button></div>
             )}
-            {!((selectedTransfer.status === 'Requested' && canWrite) || (selectedTransfer.status === 'Dispatched' && canReceive)) && (
+            {!((selectedTransfer.status === 'Requested' && canDispatchSelected) || (selectedTransfer.status === 'Dispatched' && canReceiveSelected)) && (
               <p className="text-sm text-slate-500"><Check size={15} className="mr-1 inline" /> This transfer is read-only for your role or has completed its available action.</p>
             )}
           </form>

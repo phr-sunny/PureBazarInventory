@@ -10,7 +10,17 @@ async function listCounts(req, res, next) {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    if (req.query.warehouseId) filter.warehouseId = req.query.warehouseId;
+    if (hasGlobalStockAccess(req.user)) {
+      if (req.query.warehouseId) filter.warehouseId = req.locationId;
+    } else if (req.locationType === 'CENTRAL') {
+      if (req.query.warehouseId) filter.warehouseId = req.locationId;
+      else {
+        const activeLocations = await Location.find({ isActive: { $ne: false } }).select('_id').lean();
+        filter.warehouseId = { $in: activeLocations.map(({ _id }) => _id) };
+      }
+    } else {
+      filter.warehouseId = req.locationId;
+    }
     const counts = await StockCount.find(filter).sort({ createdAt: -1 }).lean();
     return res.json({ success: true, stockCounts: counts });
   } catch (error) {
@@ -21,9 +31,9 @@ async function listCounts(req, res, next) {
 async function createCount(req, res, next) {
   let session;
   try {
-    const { warehouseId } = req.body;
-    if (!canManageLocation(req.user, warehouseId)) {
-      throw statusError('You can only count stock at your assigned warehouse', 403);
+    const warehouseId = req.locationId || req.body.warehouseId;
+    if (!canManageLocation(req, warehouseId, { allowCentralLocationSelection: true })) {
+      throw statusError('You can only count stock at your assigned location', 403);
     }
     const productIds = req.body.lines.map((line) => line.productId);
     if (new Set(productIds).size !== productIds.length) {
@@ -33,7 +43,9 @@ async function createCount(req, res, next) {
     let output;
     await session.withTransaction(async () => {
       const location = await Location.findById(warehouseId).session(session).lean();
-      if (!location) throw statusError('Warehouse or outlet not found', 404);
+      if (!location || location.isActive === false || !['CENTRAL', 'OUTLET'].includes(location.type)) {
+        throw statusError('An active warehouse or outlet is required', 400);
+      }
       await loadProducts(productIds, session);
       const balances = await currentStock(
         warehouseId,
@@ -75,9 +87,11 @@ async function postCount(req, res, next) {
     await session.withTransaction(async () => {
       const count = await StockCount.findById(req.params.id).session(session);
       if (!count) throw statusError('Stock count not found', 404);
-      if (!canManageLocation(req.user, count.warehouseId)) {
-        throw statusError('You can only post counts at your assigned warehouse', 403);
+      if (!canManageLocation(req, count.warehouseId, { allowCentralLocationSelection: true })) {
+        throw statusError('You can only post counts at your assigned location', 403);
       }
+      const location = await Location.findById(count.warehouseId).session(session).lean();
+      if (!location || location.isActive === false) throw statusError('Stock count location is not active', 409);
       if (count.status !== 'Counting' || count.stockAdjustmentId) {
         throw statusError('Only unposted counts can be posted', 409);
       }
@@ -125,6 +139,7 @@ async function postCount(req, res, next) {
       await AuditLog.create([{
         actorId: req.user._id, action: count.status === 'PendingApproval' ? 'SUBMIT' : 'POST',
         entity: 'StockCount', entityId: count._id, before, after: objectOf(count), ipAddress: req.ip,
+        metadata: { warehouseId: count.warehouseId, postedBy: count.postedBy || null },
       }], { session });
       output = objectOf(count);
     });

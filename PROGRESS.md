@@ -675,3 +675,8 @@
 	- Files: enforceLocationScope and POS routes/services; VendorLedger locationId; POS checkout, sales history, returns, and shift screens/services; POS outlet selector; focused POS integration tests.
 	- Decisions: all POS operations use the middleware-assigned active OUTLET; locked users cannot override their location, warehouse/inactive assignments are rejected, and Super Admin selects an outlet. Orders, stock movements, vendor ledger lines, returns, history, and shift reports use the same outlet.
 	- Validation: backend Jest passes (44 suites, 274 tests); frontend production build passes. Frontend tests remain 28/29 due to nine existing untranslated UI literals unrelated to POS scope.
+
+- [x] P5 Stock scope
+	- Files: location-scope middleware and stock helpers/controllers/routes; location-filtered transfer workflow; stock count and adjustment screens; Central Warehouse Stock scope; new Outlet Inventory API/screen and navigation; optional product SKU support; role permission mapping; integration tests.
+	- Decisions: outlet users remain locked to their assigned location; central users may view active locations and create/post counts there, while adjustments, GRNs, transfers, and POS remain location-locked. Transfer reads/actions are restricted to source/destination locations. All stock totals and count differences use StockMovement rows by warehouseId; count posting audit metadata records postedBy and warehouseId.
+	- Validation: backend Jest passes (44 suites, 279 tests); frontend production build passes. Frontend tests remain 28/29 due to nine pre-existing untranslated UI literals outside this change.

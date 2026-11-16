@@ -12,11 +12,18 @@ function hasGlobalStockAccess(user) {
   return isSuperAdmin(user);
 }
 
-function canManageLocation(user, locationId) {
+function canManageLocation(userOrRequest, locationId, { allowCentralLocationSelection = false } = {}) {
+  const request = userOrRequest?.user ? userOrRequest : null;
+  const user = request?.user || userOrRequest;
   if (hasGlobalStockAccess(user)) return true;
-  const assigned = locationIdOf(user?.locationId);
+  const assigned = request?.locationId || locationIdOf(user?.locationId);
   const requested = locationIdOf(locationId);
-  return Boolean(assigned && requested && assigned.toString() === requested.toString());
+  if (assigned && requested && assigned.toString() === requested.toString()) return true;
+  return Boolean(
+    allowCentralLocationSelection
+      && (request?.locationType || user?.location?.type) === 'CENTRAL'
+      && requested,
+  );
 }
 
 function adjustmentValue(lines, products) {

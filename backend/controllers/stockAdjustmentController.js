@@ -22,7 +22,11 @@ async function listAdjustments(req, res, next) {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    if (req.query.warehouseId) filter.warehouseId = req.query.warehouseId;
+    if (hasGlobalStockAccess(req.user)) {
+      if (req.query.warehouseId) filter.warehouseId = req.query.warehouseId;
+    } else {
+      filter.warehouseId = req.locationId || req.user.locationId;
+    }
     const adjustments = await StockAdjustment.find(filter).sort({ createdAt: -1 }).lean();
     const productIds = [...new Set(adjustments.flatMap((adjustment) => (
       adjustment.lines.map((line) => line.productId.toString())
@@ -52,7 +56,7 @@ async function createAdjustment(req, res, next) {
   let session;
   try {
     const { warehouseId } = req.body;
-    if (!canManageLocation(req.user, warehouseId)) {
+    if (!canManageLocation(req, warehouseId)) {
       throw statusError('You can only adjust stock at your assigned warehouse', 403);
     }
     const lines = normalizeLines(req.body.lines, req.body.mode);
@@ -62,7 +66,9 @@ async function createAdjustment(req, res, next) {
     let output;
     await session.withTransaction(async () => {
       const location = await Location.findById(warehouseId).session(session).lean();
-      if (!location) throw statusError('Warehouse or outlet not found', 404);
+      if (!location || location.isActive === false || !['CENTRAL', 'OUTLET'].includes(location.type)) {
+        throw statusError('An active warehouse or outlet is required', 400);
+      }
       const productIds = lines.map((line) => line.productId);
       const products = await loadProducts(productIds, session);
       if (req.body.mode === 'REMOVE') {
@@ -122,6 +128,10 @@ async function approveAdjustment(req, res, next) {
       const adjustment = await StockAdjustment.findById(req.params.id).session(session);
       if (!adjustment) throw statusError('Stock adjustment not found', 404);
       if (adjustment.status !== 'Pending') throw statusError('Only pending adjustments can be approved', 409);
+      const location = await Location.findById(adjustment.warehouseId).session(session).lean();
+      if (!location || location.isActive === false) {
+        throw statusError('Stock adjustment location is not active', 409);
+      }
       const before = objectOf(adjustment);
       await postMovements(adjustment, req.user._id, session);
       adjustment.status = 'Approved';
@@ -137,6 +147,7 @@ async function approveAdjustment(req, res, next) {
           await AuditLog.create([{
             actorId: req.user._id, action: 'POST', entity: 'StockCount', entityId: count._id,
             before: countBefore, after: objectOf(count), ipAddress: req.ip,
+            metadata: { warehouseId: count.warehouseId, postedBy: count.postedBy },
           }], { session });
         }
       }

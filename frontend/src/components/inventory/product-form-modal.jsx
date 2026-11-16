@@ -16,6 +16,7 @@ import useToastMessages from '@/hooks/use-toast-messages';
 
 const emptyForm = {
   name: '',
+  sku: '',
   ownerType: 'COMPANY',
   vendorId: '',
   vendorPrice: '',
@@ -145,6 +146,7 @@ export default function ProductFormModal({
 
     const payload = {
       name: form.name.trim(),
+      ...(form.sku.trim() ? { sku: form.sku.trim() } : {}),
       categoryId: form.categoryId,
       ...(form.brandId ? { brandId: form.brandId } : {}),
       unitId: form.unitId,
@@ -205,6 +207,7 @@ export default function ProductFormModal({
         <form className="space-y-5" onSubmit={submit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Product name" name="name" value={form.name} onChange={(event) => update('name', event.target.value)} required maxLength={150} autoFocus />
+            <Input label="SKU" name="sku" value={form.sku} onChange={(event) => update('sku', event.target.value)} maxLength={100} />
             <Select label="Owner" name="ownerType" value={form.ownerType} onChange={(event) => update('ownerType', event.target.value)}>
               <option value="COMPANY"><T>{"Company"}</T></option>
               <option value="VENDOR"><T>{"Vendor"}</T></option>

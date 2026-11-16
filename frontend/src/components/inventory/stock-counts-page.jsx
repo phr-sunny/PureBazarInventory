@@ -29,10 +29,14 @@ export default function StockCountsPage() {
   const permissions = user?.permissions || [];
   const canRead = can(permissions, 'stock:read');
   const canWrite = can(permissions, 'stock:write');
+  const isSuperAdmin = user?.role === 'Super Admin';
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+  const canChooseLocation = isSuperAdmin || user?.location?.type === 'CENTRAL';
   const [counts, setCounts] = useState([]);
   const [locations, setLocations] = useState([]);
   const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [reason, setReason] = useState('');
   const [search, setSearch] = useState('');
@@ -57,23 +61,36 @@ export default function StockCountsPage() {
     ])
       .then(([locationResponse, countResponse, productResponse]) => {
         if (!active) return;
-        const availableLocations = locationResponse.data.locations.filter((item) => item.isActive !== false);
+        const availableLocations = locationResponse.data.locations.filter((item) => (
+          item.isActive !== false
+          && (canChooseLocation || item.id === assignedLocationId)
+        ));
         setLocations(availableLocations);
-        setWarehouseId(availableLocations[0]?.id || '');
+        const defaultLocation = availableLocations.find((item) => item.id === assignedLocationId)
+          || availableLocations.find((item) => item.type === 'CENTRAL')
+          || availableLocations[0];
+        setWarehouseId(defaultLocation?.id || '');
         setCounts(countResponse.data.stockCounts);
         setProducts(productResponse?.data.products || []);
       })
       .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock count data.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, permissions, token]);
+  }, [assignedLocationId, canChooseLocation, canRead, initialized, permissions, token]);
 
   useEffect(() => {
-    if (!token || !warehouseId) return undefined;
+    if (!token || !warehouseId) {
+      setStock([]);
+      setStockLoading(false);
+      return undefined;
+    }
     let active = true;
+    setStock([]);
+    setStockLoading(true);
     getWarehouseStock(token, warehouseId)
       .then((response) => active && setStock(response.data.stock))
-      .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load location stock.'));
+      .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load location stock.'))
+      .finally(() => active && setStockLoading(false));
     return () => { active = false; };
   }, [token, warehouseId]);
 
@@ -96,6 +113,11 @@ export default function StockCountsPage() {
     });
     setSearch('');
   }, [stockByProduct]);
+
+  function changeLocation(event) {
+    setWarehouseId(event.target.value);
+    setCountLines([]);
+  }
 
   const scanner = useBarcodeScanner((barcode) => {
     const product = products.find((item) => item.barcode === barcode);
@@ -187,21 +209,25 @@ export default function StockCountsPage() {
         <Card title="Start stock count" description="The system quantity is captured when the count is submitted.">
           <form className="space-y-4" onSubmit={submit}>
             <div className="grid gap-4 md:grid-cols-2">
-              <Select label="Warehouse or outlet" name="warehouseId" value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}>
-                <option value=""><T>{"Choose a location"}</T></option>
-                {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-              </Select>
+              {canChooseLocation ? (
+                <Select label="Warehouse or outlet" name="warehouseId" value={warehouseId} onChange={changeLocation}>
+                  <option value=""><T>{"Choose a location"}</T></option>
+                  {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                </Select>
+              ) : (
+                <Input label="Outlet" name="warehouseId" value={locations.find((item) => item.id === warehouseId)?.name || user?.location?.name || ''} readOnly />
+              )}
               <Input label="Count reason" name="reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} required placeholder="e.g. Monthly inventory count" />
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex items-end gap-2">
-                <Input className="min-w-0 flex-1" label="Scan barcode and press Enter" name="barcodeScanner" value={scanner.value} onChange={scanner.onChange} onKeyDown={scanner.onKeyDown} placeholder="Focus here, then scan a product barcode" disabled={!products.length} />
-                <CameraBarcodeScanner onScan={scanner.onScan} disabled={!products.length} />
+                <Input className="min-w-0 flex-1" label="Scan barcode and press Enter" name="barcodeScanner" value={scanner.value} onChange={scanner.onChange} onKeyDown={scanner.onKeyDown} placeholder="Focus here, then scan a product barcode" disabled={!products.length || stockLoading} />
+                <CameraBarcodeScanner onScan={scanner.onScan} disabled={!products.length || stockLoading} />
               </div>
               <div className="relative">
                 <div className="flex items-end gap-2">
-                  <Input className="min-w-0 flex-1" label="Find product" name="productSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or barcode" disabled={!products.length} />
-                  <CameraBarcodeScanner onScan={setSearch} disabled={!products.length} />
+                  <Input className="min-w-0 flex-1" label="Find product" name="productSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or barcode" disabled={!products.length || stockLoading} />
+                  <CameraBarcodeScanner onScan={setSearch} disabled={!products.length || stockLoading} />
                 </div>
                 {matches.length > 0 && <div className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded border border-slate-200 bg-white shadow-lg">
                   {matches.map((product) => <button key={product.id} type="button" className="block w-full border-b border-slate-100 px-3 py-2 text-left hover:bg-slate-50" onClick={() => addProduct(product)}>

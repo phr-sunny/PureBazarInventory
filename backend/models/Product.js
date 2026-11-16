@@ -18,6 +18,7 @@ const productSchema = new mongoose.Schema({
   subUnitPrice: { type: Number, min: 0 },
   vatApplicable: { type: Boolean, default: false },
   vatRate: { type: Number, min: 0, max: 100 },
+  sku: { type: String, trim: true },
   barcode: {
     type: String,
     trim: true,

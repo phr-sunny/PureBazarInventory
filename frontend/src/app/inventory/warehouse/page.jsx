@@ -16,6 +16,8 @@ export default function WarehousePage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
   const canRead = can(user?.permissions || [], 'stock:read');
   const isSuperAdmin = user?.role === 'Super Admin';
+  const canChooseLocation = isSuperAdmin || user?.location?.type === 'CENTRAL';
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
   const [location, setLocation] = useState(null);
   const [locations, setLocations] = useState([]);
   const [stock, setStock] = useState([]);
@@ -33,18 +35,17 @@ export default function WarehousePage() {
     let active = true;
     getLocations(token)
       .then((response) => {
-        const userLocationId = String(user?.locationId?._id || user?.locationId || '');
         const availableLocations = response.data.locations.filter((item) => (
-          item.isActive !== false && (isSuperAdmin || item.id === userLocationId)
+          item.isActive !== false && (canChooseLocation || item.id === assignedLocationId)
         ));
         if (!availableLocations.length) {
           throw new Error(isSuperAdmin
             ? 'No active locations are available.'
             : 'Your assigned location is not available.');
         }
-        const selected = isSuperAdmin
-          ? availableLocations.find(({ type }) => type === 'CENTRAL') || availableLocations[0]
-          : availableLocations[0];
+        const selected = availableLocations.find(({ id }) => id === assignedLocationId)
+          || availableLocations.find(({ type }) => type === 'CENTRAL')
+          || availableLocations[0];
         if (!active) return;
         setLocations(availableLocations);
         setLocation(selected);
@@ -54,7 +55,7 @@ export default function WarehousePage() {
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, isSuperAdmin, token, user?.locationId]);
+  }, [assignedLocationId, canChooseLocation, canRead, initialized, isSuperAdmin, token]);
 
   useEffect(() => {
     if (!token || !location?.id) return undefined;
@@ -95,7 +96,7 @@ export default function WarehousePage() {
         <h1 className="text-2xl font-semibold text-slate-900">{location?.name || 'Location'} Stock</h1>
         <p className="mt-1 text-sm text-slate-600"><T>{"Current balance is calculated from approved stock movements."}</T></p>
       </div>
-      {isSuperAdmin && (
+      {canChooseLocation && (
         <div className="max-w-sm">
           <Select
             label="Stock location"

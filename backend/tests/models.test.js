@@ -32,6 +32,7 @@ describe('Mongoose models', () => {
   it('calculates margin and applies stock and commission defaults', async () => {
     const product = new models.Product({
       name: 'Rice',
+      sku: ' RICE-001 ',
       categoryId: objectId(),
       unitId: objectId(),
       ownerType: 'COMPANY',
@@ -44,6 +45,7 @@ describe('Mongoose models', () => {
     await category.validate();
 
     expect(product.margin).toBe(20.01);
+    expect(product.sku).toBe('RICE-001');
     expect(product.listedOnline).toBe(false);
     expect(category.commissionEnabled).toBe(false);
   });
@@ -158,7 +160,7 @@ describe('Mongoose models', () => {
     expect(indexes).toContainEqual({ barcode: 1 });
     expect(indexes).toContainEqual({ vendorId: 1 });
     expect(indexes).toContainEqual({ createdAt: 1 });
-    expect(models.Product.schema.path('sku')).toBeUndefined();
+    expect(models.Product.schema.path('sku')).toBeDefined();
     expect(indexes.some((fields) => fields.sku)).toBe(false);
   });
 });

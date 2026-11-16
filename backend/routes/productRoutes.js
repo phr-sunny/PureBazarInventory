@@ -11,6 +11,8 @@ const write = [authMiddleware, authorizeMiddleware({ permissions: ['products:wri
 const id = param('id').isMongoId().withMessage('A valid product ID is required');
 const name = body('name').isString().trim().isLength({ min: 1, max: 150 })
   .withMessage('Name must be 1 to 150 characters');
+const sku = body('sku').optional({ nullable: true }).isString().trim().isLength({ max: 100 })
+  .withMessage('SKU must be at most 100 characters');
 const categoryId = body('categoryId').isMongoId().withMessage('A valid category ID is required');
 const unitId = body('unitId').isMongoId().withMessage('A valid unit ID is required');
 const ownerType = body('ownerType').isIn(['COMPANY', 'VENDOR']).withMessage('Owner type must be COMPANY or VENDOR');
@@ -35,7 +37,7 @@ const pieceRules = [
 
 router.get('/', read, productsController.listProducts);
 router.post('/', write, [
-  name, categoryId, unitId, ownerType, vendorPrice, mrp,
+  name, sku, categoryId, unitId, ownerType, vendorPrice, mrp,
   optionalId('brandId'), optionalId('vendorId'),
   body('vatApplicable').optional().isBoolean().toBoolean()
     .withMessage('vatApplicable must be a boolean'),
@@ -48,6 +50,7 @@ router.put('/:id', write, [
   id,
   body('name').optional().isString().trim().isLength({ min: 1, max: 150 })
     .withMessage('Name must be 1 to 150 characters'),
+  sku,
   body('categoryId').optional().isMongoId().withMessage('A valid category ID is required'),
   body('unitId').optional().isMongoId().withMessage('A valid unit ID is required'),
   body('ownerType').optional().isIn(['COMPANY', 'VENDOR'])
