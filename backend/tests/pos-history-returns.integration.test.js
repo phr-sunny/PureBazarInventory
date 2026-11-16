@@ -23,6 +23,7 @@ const errorMiddleware = require('../middlewares/errorMiddleware');
 const secret = 'pos-history-test-secret';
 const cashierId = new mongoose.Types.ObjectId('65b000000000000000000011');
 const outletId = new mongoose.Types.ObjectId('65b000000000000000000012');
+const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000017');
 const orderId = new mongoose.Types.ObjectId('65b000000000000000000013');
 const productId = new mongoose.Types.ObjectId('65b000000000000000000014');
 const vendorId = new mongoose.Types.ObjectId('65b000000000000000000015');
@@ -142,6 +143,7 @@ describe('POS history and returns API', () => {
     user = { ...user, roleId: { name: 'Super Admin', permissions: ['*'] } };
     const response = await request(app).get('/api/pos/history')
       .query({
+        selectedOutletId: outletId.toString(),
         outlet: outletId.toString(),
         cashier: cashierId.toString(),
         date: '2026-10-18',
@@ -184,9 +186,25 @@ describe('POS history and returns API', () => {
     expect(db.ledgers[1]).toMatchObject({
       vendorId, orderId, returnId: db.returns[0]._id, productId,
       quantity: 2, entryType: 'RETURN', vendorPayable: 120, companyNet: -80,
+      locationId: outletId,
     });
+
     expect(db.audits).toHaveLength(1);
     expect(session.endSession).toHaveBeenCalled();
+  });
+
+  it('prevents a locked user from reading or returning another outlet bill', async () => {
+    db.order.outlet = otherOutletId;
+    const history = await request(app).get('/api/pos/history').set(auth());
+    const returned = await request(app).post(`/api/pos/${orderId}/return`).set(auth()).send({});
+
+    expect(history.status).toBe(200);
+    expect(history.body.orders).toEqual([]);
+    expect(models.Order.find).toHaveBeenCalledWith(expect.objectContaining({ outlet: outletId }));
+    expect(returned.status).toBe(403);
+    expect(returned.body.message).toMatch(/selected outlet/i);
+    expect(models.Return.create).not.toHaveBeenCalled();
+    expect(models.StockMovement.create).not.toHaveBeenCalled();
   });
 
   it('blocks a second return without posting duplicate stock or ledger entries', async () => {

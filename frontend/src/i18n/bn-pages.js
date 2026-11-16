@@ -1,5 +1,10 @@
 ﻿// Bengali strings for module pages: dashboard, inventory, POS, sales, products, stock count, settings, reports.
 const pages = {
+  'Select an outlet': 'একটি আউটলেট নির্বাচন করুন',
+  'No active outlets are available.': 'কোনো সক্রিয় আউটলেট উপলভ্য নেই।',
+  'Select an outlet before using POS.': 'পিওএস ব্যবহারের আগে একটি আউটলেট নির্বাচন করুন।',
+  'Select an outlet to view shifts.': 'শিফট দেখতে একটি আউটলেট নির্বাচন করুন।',
+  Outlet: 'আউটলেট',
   'All Products': 'সব পণ্য',
   'Add New Product': 'নতুন পণ্য যোগ করুন',
   'Add new product': 'নতুন পণ্য যোগ করুন',

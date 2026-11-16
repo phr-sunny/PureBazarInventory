@@ -1,13 +1,12 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const {
-  AuditLog, DiscountLog, Location, Order, StockMovement, VendorLedger,
+  AuditLog, DiscountLog, Order, StockMovement, VendorLedger,
   WalletAuditLog, WalletLog,
 } = require('../models');
 const {
   billOutput, loadBill, receiptData, statusError,
 } = require('./posBillService');
-const { getDefaultPosOutlet } = require('./posOutletService');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 const probashiWalletService = require('./probashiWalletService');
 
@@ -61,20 +60,6 @@ async function checkWallet(result, userId) {
   return balance.sufficient;
 }
 
-async function resolveOutlet(body, user) {
-  const outletId = body.outletId || user.locationId;
-  const outlet = outletId
-    ? await Location.findById(outletId).lean()
-    : await getDefaultPosOutlet();
-  if (!outlet || outlet.type !== 'OUTLET' || outlet.isActive === false) {
-    throw statusError(
-      outletId ? 'POS sales must be assigned to an active outlet' : 'No active POS outlet is configured',
-      outletId ? 400 : 503,
-    );
-  }
-  return outlet._id;
-}
-
 async function existingOfflineOrder(offlineId) {
   return Order.findOne({ offlineId }).lean();
 }
@@ -115,7 +100,7 @@ async function commitBill(req, res, next, offline) {
       });
     }
 
-    const outletId = await resolveOutlet(req.body, req.user);
+    const outletId = req.locationId;
     const orderNumber = `POS-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const saleDate = new Date(req.body.soldAt || Date.now());
     const unitLabels = await unitLabelMap(result.lines.map(({ product }) => product));
@@ -200,6 +185,7 @@ async function commitBill(req, res, next, offline) {
         entryType: 'SALE',
         vendorPayable: line.vendorPayable,
         companyNet: line.companyNet,
+        locationId: outletId,
       }));
       if (ledgerRows.length) await VendorLedger.create(ledgerRows, { session, ordered: true });
       if (result.wallet && result.shareholder) {
@@ -272,6 +258,5 @@ async function commitBill(req, res, next, offline) {
 
 module.exports = {
   finalizeBill: (req, res, next) => commitBill(req, res, next, false),
-  resolveOutlet,
   syncOfflineBill: (req, res, next) => commitBill(req, res, next, true),
 };

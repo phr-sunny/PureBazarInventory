@@ -1,11 +1,24 @@
 import api from './api';
 
-export const scanPosItem = (barcode) => api.get(`/pos/scan/${encodeURIComponent(barcode)}`);
-export const searchPosItems = (q) => api.get('/pos/search', { params: { q } });
-export const previewPosBill = (payload) => api.post('/pos/bill', payload);
+const outletParams = (selectedOutletId) => (
+  selectedOutletId ? { params: { selectedOutletId } } : undefined
+);
+
+export const scanPosItem = (barcode, selectedOutletId) => api.get(
+  `/pos/scan/${encodeURIComponent(barcode)}`,
+  outletParams(selectedOutletId),
+);
+export const searchPosItems = (q, selectedOutletId) => api.get('/pos/search', {
+  params: { q, ...(selectedOutletId ? { selectedOutletId } : {}) },
+});
+export const previewPosBill = (payload, selectedOutletId) => api.post(
+  '/pos/bill', payload, outletParams(selectedOutletId),
+);
 export const verifyPosMember = (payload) => api.post('/pos/verify-member', payload);
 export const checkPosWalletBalance = (payload) => api.post('/shareholders/balance-check', payload);
-export const checkoutPosBill = (payload) => api.post('/pos/checkout', payload);
+export const checkoutPosBill = (payload, selectedOutletId) => api.post(
+  '/pos/checkout', payload, outletParams(selectedOutletId),
+);
 
 export function posErrorMessage(error) {
   return error.response?.data?.message || error.message || 'The POS request could not be completed.';

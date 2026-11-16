@@ -5,7 +5,6 @@ const {
 } = require('../models');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 const { statusError } = require('./posBillService');
-const { resolveOutlet } = require('./posCheckoutService');
 
 function money(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -51,15 +50,7 @@ async function listSalesHistory(req) {
   const filter = {};
   const clauses = [];
 
-  if (req.user.role !== 'Super Admin') {
-    const outlet = await resolveOutlet({}, req.user);
-    if (query.outlet && query.outlet !== outlet.toString()) {
-      throw statusError('Sales history is limited to the assigned outlet', 403);
-    }
-    filter.outlet = outlet;
-  } else if (query.outlet) {
-    filter.outlet = query.outlet;
-  }
+  filter.outlet = req.locationId;
   if (query.cashier) filter.cashier = query.cashier;
   if (query.shareholderId) filter.memberId = query.shareholderId;
   if (query.paymentMethod) filter['payments.method'] = query.paymentMethod;
@@ -97,11 +88,8 @@ async function returnBill(req) {
     await session.withTransaction(async () => {
       const order = await Order.findById(req.params.orderId).session(session).lean();
       if (!order) throw statusError('POS bill was not found', 404);
-      if (req.user.role !== 'Super Admin') {
-        const outlet = await resolveOutlet({}, req.user);
-        if (order.outlet.toString() !== outlet.toString()) {
-          throw statusError('Bill returns are limited to the assigned outlet', 403);
-        }
+      if (order.outlet.toString() !== req.locationId.toString()) {
+        throw statusError('Bill returns are limited to the selected outlet', 403);
       }
       if (order.paymentStatus !== 'PAID') {
         throw statusError('Bill has already been returned', 409);
@@ -154,6 +142,7 @@ async function returnBill(req) {
         await VendorLedger.create(saleLedgers.map((ledger) => ({
           vendorId: ledger.vendorId,
           orderId: order._id,
+          locationId: order.outlet,
           returnId: createdReturn._id,
           productId: ledger.productId,
           quantity: ledger.quantity,

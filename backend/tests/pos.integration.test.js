@@ -78,7 +78,10 @@ describe('POS checkout API', () => {
     failLedger = false;
     db = {
       orders: [],
-      movements: [{ productId, warehouseId: outletId, quantity: 10, type: 'GRN' }],
+      movements: [
+        { productId, warehouseId: outletId, quantity: 10, type: 'GRN' },
+        { productId, warehouseId: new mongoose.Types.ObjectId('65b000000000000000000007'), quantity: 50, type: 'GRN' },
+      ],
       ledgers: [],
       walletLogs: [],
       discounts: [],
@@ -315,7 +318,7 @@ describe('POS checkout API', () => {
     });
     expect(response.status).toBe(500);
     expect(db.orders).toHaveLength(0);
-    expect(db.movements).toHaveLength(1);
+    expect(db.movements).toHaveLength(2);
     expect(db.ledgers).toHaveLength(0);
     expect(db.audits).toHaveLength(0);
     expect(session.endSession).toHaveBeenCalled();
@@ -337,30 +340,83 @@ describe('POS checkout API', () => {
       quantity: 2, subtotal: 200, billDiscountAmount: 10, total: 190,
     });
     expect(db.movements.at(-1)).toMatchObject({ quantity: -2, type: 'SALE' });
+    expect(db.movements.at(-1).warehouseId.toString()).toBe(outletId.toString());
     expect(db.ledgers[0]).toMatchObject({
       quantity: 2, vendorPayable: 120, companyNet: 70, entryType: 'SALE',
+      locationId: outletId,
     });
     expect(db.discounts[0]).toMatchObject({ amount: 10, reason: 'Offer' });
   });
 
-  it('uses the active primary outlet for unassigned cashiers and records it on sales and movements', async () => {
+  it('ignores a client outletId and uses only the assigned outlet for order, stock, and ledger', async () => {
+    const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000007');
+    const response = await checkout({
+      items: line(),
+      payments: [{ method: 'CASH', amount: 100 }],
+      outletId: otherOutletId.toString(),
+    });
+
+    expect(response.status).toBe(201);
+    expect(db.orders[0].outlet.toString()).toBe(outletId.toString());
+    expect(db.movements.at(-1)).toMatchObject({
+      warehouseId: outletId, quantity: -1, type: 'SALE',
+    });
+    expect(db.ledgers[0].locationId.toString()).toBe(outletId.toString());
+    expect(models.StockMovement.aggregate.mock.calls.at(-1)[0][0].$match.warehouseId.toString())
+      .toBe(outletId.toString());
+  });
+
+  it('requires a Super Admin to select an outlet for POS', async () => {
+    user = {
+      ...user, _id: adminId, roleId: { name: 'Super Admin', permissions: ['*'] },
+    };
+    const response = await checkout({
+      items: line(), payments: [{ method: 'CASH', amount: 100 }],
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/select an outlet/i);
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects POS use by a user assigned to a warehouse', async () => {
+    const warehouseId = new mongoose.Types.ObjectId('65b000000000000000000008');
+    user = { ...user, locationId: warehouseId };
+    models.Location.findById.mockReturnValue(query({
+      _id: warehouseId, type: 'CENTRAL', isActive: true,
+    }));
+
+    const response = await checkout({
+      items: line(), payments: [{ method: 'CASH', amount: 100 }],
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/active outlet/i);
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects POS use by a user assigned to an inactive outlet', async () => {
+    models.Location.findById.mockReturnValue(query({
+      _id: outletId, type: 'OUTLET', isActive: false,
+    }));
+
+    const response = await checkout({
+      items: line(), payments: [{ method: 'CASH', amount: 100 }],
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/active outlet/i);
+    expect(models.Order.create).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back to a primary outlet for an unassigned user', async () => {
     user = { ...user, locationId: undefined };
     const response = await checkout({
       items: line(), payments: [{ method: 'CASH', amount: 100 }],
     });
 
-    expect(response.status).toBe(201);
-    expect(models.Location.findOne).toHaveBeenCalledWith({
-      type: 'OUTLET', isActive: { $ne: false },
-    });
-    expect(models.Location.findOne.mock.results[0].value.sort).toHaveBeenCalledWith({
-      isPrimary: -1, createdAt: 1,
-    });
-    expect(db.orders[0].outlet.toString()).toBe(outletId.toString());
-    expect(db.movements.at(-1)).toMatchObject({
-      warehouseId: outletId, quantity: -1, type: 'SALE',
-    });
-    expect(db.movements.at(-1).referenceId.toString()).toBe(db.orders[0]._id.toString());
+    expect(response.status).toBe(403);
+    expect(models.Location.findOne).not.toHaveBeenCalled();
+    expect(models.Order.create).not.toHaveBeenCalled();
   });
 
   it('requires a Super Admin to approve a discount above the cashier limit', async () => {
@@ -376,7 +432,10 @@ describe('POS checkout API', () => {
     user = {
       ...user, _id: adminId, roleId: { name: 'Super Admin', permissions: ['pos:read', 'pos:write'] },
     };
-    const approved = await checkout({ ...body, discountApproved: true });
+    const approved = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: outletId.toString() })
+      .set(auth())
+      .send({ ...body, discountApproved: true, outletId: outletId.toString() });
     expect(approved.status).toBe(201);
     expect(db.discounts[0].approvedBy.toString()).toBe(adminId.toString());
   });

@@ -20,6 +20,7 @@ const errorMiddleware = require('../middlewares/errorMiddleware');
 const secret = 'pos-shifts-test-secret';
 const cashierId = new mongoose.Types.ObjectId('65b000000000000000000021');
 const outletId = new mongoose.Types.ObjectId('65b000000000000000000022');
+const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000025');
 const shiftId = new mongoose.Types.ObjectId('65b000000000000000000023');
 const otherCashierId = new mongoose.Types.ObjectId('65b000000000000000000024');
 
@@ -108,7 +109,7 @@ describe('POS cashier shifts API', () => {
 
   it('opens a shift and closes against opening cash plus paid bill cash tenders', async () => {
     const opened = await request(app).post('/api/pos/shifts').set(auth())
-      .send({ openingCash: 100 });
+      .send({ openingCash: 100, outletId: otherOutletId.toString() });
 
     expect(opened.status).toBe(201);
     expect(opened.body.shift).toMatchObject({
@@ -128,6 +129,10 @@ describe('POS cashier shifts API', () => {
       {
         cashier: cashierId, outlet: outletId, paymentStatus: 'PAID', createdAt: soldAt,
         payments: [{ method: 'CASH', amount: 10 }, { method: 'BKASH', amount: 20 }],
+      },
+      {
+        cashier: cashierId, outlet: otherOutletId, paymentStatus: 'PAID', createdAt: soldAt,
+        payments: [{ method: 'CASH', amount: 500 }],
       },
       {
         cashier: cashierId, outlet: outletId, paymentStatus: 'REFUNDED', createdAt: soldAt,
@@ -208,5 +213,33 @@ describe('POS cashier shifts API', () => {
     const response = await request(app).get(`/api/pos/shifts/${shiftId}/report`).set(auth());
 
     expect(response.status).toBe(403);
+  });
+
+  it('prevents a locked cashier from reading another outlet shift', async () => {
+    db.shift = {
+      _id: shiftId,
+      cashierId,
+      outletId: otherOutletId,
+      openingCash: 0,
+      openedAt: new Date(),
+      status: 'OPEN',
+    };
+
+    const response = await request(app).get(`/api/pos/shifts/${shiftId}/report`).set(auth());
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/selected outlet/i);
+  });
+
+  it('requires a Super Admin to select an outlet for shift operations', async () => {
+    user = {
+      ...user, roleId: { name: 'Super Admin', permissions: ['*'] },
+    };
+
+    const response = await request(app).post('/api/pos/shifts').set(auth()).send({ openingCash: 0 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/select an outlet/i);
+    expect(models.Shift.create).not.toHaveBeenCalled();
   });
 });

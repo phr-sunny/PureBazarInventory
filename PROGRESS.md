@@ -670,3 +670,8 @@
 	- Files: backend GRN/stock routes and controllers, enforceLocationScope, goods-receive integration tests, frontend warehouse and GRN screens/services.
 	- Decisions: location-locked users create, edit, view, approve, and reject GRNs only at their assigned active location; Super Admin can select active locations. Outlet direct company purchases and vendor purchases both create GRNs. Approval continues to atomically create GRN StockMovement lines at the GRN warehouseId; stock remains movement-derived.
 	- Validation: backend Jest passes (44 suites, 267 tests); focused GRN suite passes (15 tests); frontend production build passes.
+
+- [x] P3 POS scope
+	- Files: enforceLocationScope and POS routes/services; VendorLedger locationId; POS checkout, sales history, returns, and shift screens/services; POS outlet selector; focused POS integration tests.
+	- Decisions: all POS operations use the middleware-assigned active OUTLET; locked users cannot override their location, warehouse/inactive assignments are rejected, and Super Admin selects an outlet. Orders, stock movements, vendor ledger lines, returns, history, and shift reports use the same outlet.
+	- Validation: backend Jest passes (44 suites, 274 tests); frontend production build passes. Frontend tests remain 28/29 due to nine existing untranslated UI literals unrelated to POS scope.

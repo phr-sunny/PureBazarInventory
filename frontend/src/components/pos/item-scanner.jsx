@@ -8,7 +8,7 @@ import useToastMessages from '@/hooks/use-toast-messages';
 import CameraBarcodeScanner from '@/components/common/camera-barcode-scanner';
 import { productLabel, stockText } from '@/services/stock-units.cjs';
 
-export default function ItemScanner({ onAdd }) {
+export default function ItemScanner({ onAdd, selectedOutletId }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
@@ -32,7 +32,7 @@ export default function ItemScanner({ onAdd }) {
     setLoading(true);
     setError('');
     try {
-      const { data } = await scanPosItem(value);
+      const { data } = await scanPosItem(value, selectedOutletId);
       onAdd(data.item);
       reset();
     } catch (requestError) {
@@ -63,7 +63,7 @@ export default function ItemScanner({ onAdd }) {
     const id = ++searchId.current;
     const timer = setTimeout(async () => {
       try {
-        const { data } = await searchPosItems(value);
+        const { data } = await searchPosItems(value, selectedOutletId);
         if (id === searchId.current) {
           setResults(data.items);
           setOpen(true);
@@ -73,7 +73,7 @@ export default function ItemScanner({ onAdd }) {
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, selectedOutletId]);
 
   function choose(item) {
     onAdd(item);

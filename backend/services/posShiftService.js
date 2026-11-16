@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 const {
   AuditLog, Order, Shift,
 } = require('../models');
-const { resolveOutlet } = require('./posCheckoutService');
 const { statusError } = require('./posBillService');
 
 const PAYMENT_METHODS = [
@@ -63,14 +62,17 @@ async function buildReport(shift, closedAt = shift.closedAt || new Date()) {
   };
 }
 
-function assertShiftAccess(shift, user) {
+function assertShiftAccess(shift, user, locationId) {
+  if (shift.outletId.toString() !== locationId.toString()) {
+    throw statusError('Shift access is limited to the selected outlet', 403);
+  }
   if (user.role !== 'Super Admin' && shift.cashierId.toString() !== user._id.toString()) {
     throw statusError('Shift access is limited to the assigned cashier', 403);
   }
 }
 
 async function openShift(req) {
-  const outletId = await resolveOutlet({ outletId: req.body.outletId }, req.user);
+  const outletId = req.locationId;
   const openingCash = money(req.body.openingCash);
   let session;
   try {
@@ -110,6 +112,7 @@ async function openShift(req) {
 async function getCurrentShift(req) {
   const shift = await Shift.findOne({
     cashierId: req.user._id,
+    outletId: req.locationId,
     status: 'OPEN',
   }).lean();
   if (!shift) return { shift: null, report: null };
@@ -119,7 +122,7 @@ async function getCurrentShift(req) {
 async function getShiftReport(req) {
   const shift = await Shift.findById(req.params.shiftId).lean();
   if (!shift) throw statusError('Shift was not found', 404);
-  assertShiftAccess(shift, req.user);
+  assertShiftAccess(shift, req.user, req.locationId);
   return { shift, report: await buildReport(shift) };
 }
 
@@ -132,7 +135,7 @@ async function closeShift(req) {
     await session.withTransaction(async () => {
       const openShift = await Shift.findById(req.params.shiftId).session(session).lean();
       if (!openShift) throw statusError('Shift was not found', 404);
-      assertShiftAccess(openShift, req.user);
+      assertShiftAccess(openShift, req.user, req.locationId);
       if (openShift.status !== 'OPEN') throw statusError('Shift is already closed', 409);
 
       const closedAt = new Date();

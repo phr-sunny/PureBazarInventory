@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Eye, RefreshCw, Search } from 'lucide-react';
 import { Badge, Button, Card, Input, Modal, Select, Table } from '@/components/ui';
 import usePosSales from '@/hooks/use-pos-sales';
+import usePosOutlet from '@/hooks/use-pos-outlet';
+import PosOutletSelector from './outlet-selector';
 import { formatLineQuantity } from '@/services/stock-units.cjs';
 import useToastMessages from '@/hooks/use-toast-messages';
 import {
@@ -45,8 +47,11 @@ function OrderDetails({ order }) {
 
 export default function SalesHistoryPage() {
   const {
+    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet();
+  const {
     orders, loading, error, canRead, loadOrders,
-  } = usePosSales();
+  } = usePosSales(selectedOutletId);
   useToastMessages({ error });
   const [filters, setFilters] = useState({ from: '', to: '', paymentMethod: '' });
   const [selected, setSelected] = useState(null);
@@ -69,6 +74,14 @@ export default function SalesHistoryPage() {
         <div><h1 className="m-0 text-2xl font-semibold"><T>{"Sales History"}</T></h1><p className="mb-0 mt-1 text-sm text-slate-500"><T>{"Review the latest POS bills and payment details."}</T></p></div>
         <Button variant="secondary" onClick={() => loadOrders(filters)} disabled={loading}><RefreshCw size={16} /> <T>{"Refresh"}</T></Button>
       </header>
+      <PosOutletSelector
+        isSuperAdmin={isSuperAdmin}
+        outlets={outlets}
+        selectedOutletId={selectedOutletId}
+        loading={loadingOutlets}
+        error={outletError}
+        onChange={(event) => setSelectedOutletId(event.target.value)}
+      />
       <Card title="Filter sales" description="Up to 100 matching bills are shown.">
         <form className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={(event) => { event.preventDefault(); loadOrders(filters); }}>
           <Input label="From" type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />

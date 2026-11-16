@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Button, Card, Input, Table } from '@/components/ui';
 import useAuth from '@/store/use-auth';
+import usePosOutlet from '@/hooks/use-pos-outlet';
+import PosOutletSelector from './outlet-selector';
 import {
   closePosShift, getCurrentPosShift, getPosShiftReport, openPosShift,
 } from '@/services/pos-admin';
@@ -46,6 +48,9 @@ function Report({ shift, report }) {
 export default function ShiftClosePage() {
   const { token, initialized, hasPermission } = useAuth();
   const { user } = useSelector((state) => state.auth);
+  const {
+    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet();
   const canRead = hasPermission('pos:read');
   const canWrite = hasPermission('pos:write');
   const [shift, setShift] = useState(null);
@@ -61,9 +66,15 @@ export default function ShiftClosePage() {
   useToastMessages({ success: notice, error });
 
   const loadCurrent = useCallback(async () => {
+    if (isSuperAdmin && !selectedOutletId) {
+      setShift(null);
+      setReport(null);
+      setLoading(false);
+      return;
+    }
     setError('');
     try {
-      const { data } = await getCurrentPosShift();
+      const { data } = await getCurrentPosShift(selectedOutletId);
       setShift(data.shift);
       setReport(data.report);
     } catch (requestError) {
@@ -71,7 +82,7 @@ export default function ShiftClosePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin, selectedOutletId]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -88,13 +99,13 @@ export default function ShiftClosePage() {
     setError('');
     setNotice('');
     try {
-      const { data } = await openPosShift({ openingCash: Number(openingCash) });
+      const { data } = await openPosShift({ openingCash: Number(openingCash) }, selectedOutletId);
       setShift(data.shift);
       setClosedShift(null);
       setClosedReport(null);
       setOpeningCash('');
       try {
-        const reportResponse = await getPosShiftReport(data.shift._id);
+        const reportResponse = await getPosShiftReport(data.shift._id, selectedOutletId);
         setReport(reportResponse.data.report);
         setNotice('Cashier shift opened.');
       } catch (reportError) {
@@ -114,7 +125,9 @@ export default function ShiftClosePage() {
     setError('');
     setNotice('');
     try {
-      const { data } = await closePosShift(shift._id, { actualCash: Number(actualCash) });
+      const { data } = await closePosShift(
+        shift._id, { actualCash: Number(actualCash) }, selectedOutletId,
+      );
       setClosedShift(data.shift);
       setClosedReport(data.report);
       setShift(null);
@@ -139,6 +152,24 @@ export default function ShiftClosePage() {
         {shift && <Badge tone="success">Shift open</Badge>}
         {closedShift && !shift && <Badge tone="neutral">Shift closed</Badge>}
       </header>
+      <PosOutletSelector
+        isSuperAdmin={isSuperAdmin}
+        outlets={outlets}
+        selectedOutletId={selectedOutletId}
+        loading={loadingOutlets}
+        error={outletError}
+        onChange={(event) => {
+          setSelectedOutletId(event.target.value);
+          setShift(null);
+          setReport(null);
+          setClosedShift(null);
+          setClosedReport(null);
+          setLoading(true);
+        }}
+      />
+      {isSuperAdmin && !selectedOutletId && !loadingOutlets && !outletError && (
+        <p className="text-sm text-slate-600" role="status"><T>{"Select an outlet to view shifts."}</T></p>
+      )}
       {loading ? <Card><p className="m-0 text-slate-500" role="status"><T>{"Loading shift…"}</T></p></Card> : (
         <>
           {currentShift && currentReport && (

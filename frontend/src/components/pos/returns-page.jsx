@@ -5,6 +5,8 @@ import { RefreshCw, RotateCcw } from 'lucide-react';
 import { Button, Card, Modal, Select, Table } from '@/components/ui';
 import useAuth from '@/store/use-auth';
 import usePosSales from '@/hooks/use-pos-sales';
+import usePosOutlet from '@/hooks/use-pos-outlet';
+import PosOutletSelector from './outlet-selector';
 import { returnPosOrder } from '@/services/pos-admin';
 import { isWalletSale, paymentMethodLabel } from '@/services/pos-screen-utils.cjs';
 import { T } from '@/i18n/language-provider';
@@ -18,8 +20,11 @@ const orderId = (order) => String(order._id || order.id);
 export default function ReturnsPage() {
   const { hasPermission } = useAuth();
   const {
+    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet();
+  const {
     orders, loading, error, canRead, loadOrders,
-  } = usePosSales();
+  } = usePosSales(selectedOutletId);
   const [selected, setSelected] = useState(null);
   const [refundMethod, setRefundMethod] = useState('');
   const [saving, setSaving] = useState(false);
@@ -39,7 +44,7 @@ export default function ReturnsPage() {
       await returnPosOrder(orderId(selected), {
         walletRefunded: Boolean(refundMethod),
         ...(refundMethod ? { walletRefundMethod: refundMethod } : {}),
-      });
+      }, selectedOutletId);
       setNotice(`Bill ${selected.orderNumber} returned. Its items were restored to stock.`);
       setSelected(null);
       setRefundMethod('');
@@ -72,6 +77,14 @@ export default function ReturnsPage() {
         <div><h1 className="m-0 text-2xl font-semibold"><T>{"Returns & Exchanges"}</T></h1><p className="mb-0 mt-1 text-sm text-slate-500"><T>{"Find a paid bill to process a full-bill return."}</T></p></div>
         <Button variant="secondary" onClick={() => loadOrders()} disabled={loading}><RefreshCw size={16} /> <T>{"Refresh"}</T></Button>
       </header>
+      <PosOutletSelector
+        isSuperAdmin={isSuperAdmin}
+        outlets={outlets}
+        selectedOutletId={selectedOutletId}
+        loading={loadingOutlets}
+        error={outletError}
+        onChange={(event) => setSelectedOutletId(event.target.value)}
+      />
       <Card>
         <div className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Returns are supported for the entire bill only. Partial returns and direct exchanges are not available; complete a return, then ring up replacement items as a new sale.

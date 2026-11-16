@@ -21,6 +21,8 @@ import { isGram, productLabel } from '@/services/stock-units.cjs';
 import InvoiceModal from './invoice-modal';
 import ErrorToast from './error-toast';
 import useToastMessages from '@/hooks/use-toast-messages';
+import usePosOutlet from '@/hooks/use-pos-outlet';
+import PosOutletSelector from './outlet-selector';
 import { T } from '@/i18n/language-provider';
 
 const { createPreviewPayload, paymentTotalMatches } = billingUtils;
@@ -32,6 +34,10 @@ export default function PosBillingPage() {
   const canRead = hasPermission('pos:read');
   const canWrite = hasPermission('pos:write');
   const canApprove = user?.role === 'Super Admin';
+  const {
+    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet();
+  const hasOutletSelection = !isSuperAdmin || Boolean(selectedOutletId);
   const [items, setItems] = useState([]);
   const [billDiscount, setBillDiscount] = useState(null);
   const [methods, setMethods] = useState(['CASH']);
@@ -78,7 +84,7 @@ export default function PosBillingPage() {
   useEffect(() => {
     const requestId = ++latestPreview.current;
     let cancelled = false;
-    if (!items.length || !payload) {
+    if (!items.length || !payload || !hasOutletSelection) {
       setBill(null);
       setPreviewError('');
       setPreviewLoading(false);
@@ -87,7 +93,7 @@ export default function PosBillingPage() {
     setBill(null);
     setPreviewLoading(true);
     setPreviewError('');
-    previewPosBill(payload).then(({ data }) => {
+    previewPosBill(payload, selectedOutletId).then(({ data }) => {
       if (!cancelled && requestId === latestPreview.current) setBill(data.bill);
     }).catch((error) => {
       if (!cancelled && requestId === latestPreview.current) setPreviewError(posErrorMessage(error));
@@ -97,7 +103,7 @@ export default function PosBillingPage() {
     return () => { cancelled = true; };
   // previewKey captures all data that determines server pricing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewKey, items.length]);
+  }, [hasOutletSelection, previewKey, selectedOutletId, items.length]);
 
   useEffect(() => {
     if (singleMethod && singleMethod !== 'WALLET' && bill) {
@@ -192,7 +198,7 @@ export default function PosBillingPage() {
         ...payload,
         payments,
         ...(discountApproved ? { discountApproved: true } : {}),
-      });
+      }, selectedOutletId);
       setSuccessMessage(`Sale completed${data.order?.orderNumber ? ` · ${data.order.orderNumber}` : ''}.`);
       setItems([]);
       setBillDiscount(null);
@@ -264,7 +270,7 @@ export default function PosBillingPage() {
   const approvalReady = !bill?.discountApprovalRequired || (canApprove && discountApproved);
   const canCheckout = canWrite && items.length > 0 && bill && !previewLoading && !previewError
     && !formError && !checkoutLoading && selectedMethods.length > 0
-    && paymentsMatch && approvalReady && !hasStockProblem(items);
+    && paymentsMatch && approvalReady && !hasStockProblem(items) && hasOutletSelection;
 
   if (!initialized) return <p role="status" className="py-10 text-center"><T>{"Loading your POS session..."}</T></p>;
   if (!token || !canRead) return <p role="alert" className="rounded bg-red-50 p-4 text-red-800"><T>{"You do not have permission to view the POS."}</T></p>;
@@ -283,44 +289,66 @@ export default function PosBillingPage() {
           <HeldBillsButton count={held.length} onClick={() => setHeldOpen(true)} />
         </div>
       </header>
+      <PosOutletSelector
+        isSuperAdmin={isSuperAdmin}
+        outlets={outlets}
+        selectedOutletId={selectedOutletId}
+        loading={loadingOutlets}
+        error={outletError}
+        onChange={(event) => {
+          setSelectedOutletId(event.target.value);
+          resetCart();
+        }}
+      />
+      {isSuperAdmin && !selectedOutletId && !loadingOutlets && !outletError && (
+        <p className="text-sm text-slate-600" role="status"><T>{"Select an outlet before using POS."}</T></p>
+      )}
       <ErrorToast message={toast || formError} onClose={toast ? () => setToast('') : undefined} />
       {receipt && <InvoiceModal receipt={receipt} onClose={() => setReceipt(null)} />}
       {holdOpen && <HoldSaleModal onConfirm={confirmHold} onCancel={() => setHoldOpen(false)} />}
       {heldOpen && <HeldBillsModal held={held} onRestore={restoreSale} onDiscard={discardHeld} onClose={() => setHeldOpen(false)} />}
-      <ItemScanner onAdd={addItem} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-5">
-          <CartPanel
-            items={items}
-            onQuantity={updateQuantity}
-            onUnit={updateUnit}
-            onRemove={(id) => setItems((current) => current.filter((item) => item.productId !== id))}
-            onDiscount={updateItemDiscount}
-          />
-          <PaymentPanel
-            methods={selectedMethods}
-            amounts={amounts}
-            total={bill?.grandTotal || 0}
-            onMethods={changeMethods}
-            onAmount={updateAmount}
+      {hasOutletSelection && !loadingOutlets && !outletError && (
+        <ItemScanner
+          key={selectedOutletId}
+          onAdd={addItem}
+          selectedOutletId={selectedOutletId}
+        />
+      )}
+      {hasOutletSelection && !loadingOutlets && !outletError && (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="space-y-5">
+            <CartPanel
+              items={items}
+              onQuantity={updateQuantity}
+              onUnit={updateUnit}
+              onRemove={(id) => setItems((current) => current.filter((item) => item.productId !== id))}
+              onDiscount={updateItemDiscount}
+            />
+            <PaymentPanel
+              methods={selectedMethods}
+              amounts={amounts}
+              total={bill?.grandTotal || 0}
+              onMethods={changeMethods}
+              onAmount={updateAmount}
+            />
+          </div>
+          <BillSummary
+            bill={bill}
+            billDiscount={billDiscount}
+            onBillDiscount={updateBillDiscount}
+            approvalRequired={Boolean(bill?.discountApprovalRequired)}
+            canApprove={canApprove}
+            discountApproved={discountApproved}
+            onApprove={setDiscountApproved}
+            previewLoading={previewLoading}
+            previewError={previewError}
+            onCheckout={checkout}
+            checkoutLoading={checkoutLoading}
+            checkoutError={checkoutError}
+            canCheckout={Boolean(canCheckout)}
           />
         </div>
-        <BillSummary
-          bill={bill}
-          billDiscount={billDiscount}
-          onBillDiscount={updateBillDiscount}
-          approvalRequired={Boolean(bill?.discountApprovalRequired)}
-          canApprove={canApprove}
-          discountApproved={discountApproved}
-          onApprove={setDiscountApproved}
-          previewLoading={previewLoading}
-          previewError={previewError}
-          onCheckout={checkout}
-          checkoutLoading={checkoutLoading}
-          checkoutError={checkoutError}
-          canCheckout={Boolean(canCheckout)}
-        />
-      </div>
+      )}
     </section>
   );
 }

@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const { Product, StockMovement } = require('../models');
 const { statusError } = require('./posBillService');
-const { resolveOutlet } = require('./posCheckoutService');
 const { effectiveSubUnitPrice } = require('../utils/piecePricing');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 
@@ -38,7 +37,7 @@ async function scanItem(req, res, next) {
   try {
     const product = await Product.findOne({ barcode: req.params.barcode }).lean();
     if (!product) throw statusError('Product barcode was not found', 404);
-    const outletId = await resolveOutlet(req.query, req.user);
+    const outletId = req.locationId;
     const stock = await stockByProduct(outletId, [product._id]);
     return res.json({ success: true, item: toItem(product, stock, await unitLabelMap([product])) });
   } catch (error) {
@@ -54,7 +53,7 @@ async function searchItems(req, res, next) {
     const products = await Product.find({
       $or: [{ name: regex }, { barcode: regex }, { sku: regex }],
     }).sort({ name: 1 }).limit(10).lean();
-    const outletId = await resolveOutlet(req.query, req.user);
+    const outletId = req.locationId;
     const stock = await stockByProduct(outletId, products.map((product) => product._id));
     const labels = await unitLabelMap(products);
     return res.json({ success: true, items: products.map((product) => toItem(product, stock, labels)) });

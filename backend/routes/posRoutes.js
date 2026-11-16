@@ -5,12 +5,14 @@ const posHistoryController = require('../controllers/posHistoryController');
 const posShiftController = require('../controllers/posShiftController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
-const read = [authMiddleware, authorizeMiddleware({ permissions: ['pos:read'] })];
-const write = [authMiddleware, authorizeMiddleware({ permissions: ['pos:write'] })];
-const manageShifts = [authMiddleware, authorizeMiddleware({ permissions: ['shifts:manage'] })];
+const outletScope = enforceLocationScope.forOutlet;
+const read = [authMiddleware, authorizeMiddleware({ permissions: ['pos:read'] }), outletScope];
+const write = [authMiddleware, authorizeMiddleware({ permissions: ['pos:write'] }), outletScope];
+const manageShifts = [authMiddleware, authorizeMiddleware({ permissions: ['shifts:manage'] }), outletScope];
 const paymentMethods = ['CASH', 'BKASH', 'NAGAD', 'CARD', 'WALLET'];
 const validDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
