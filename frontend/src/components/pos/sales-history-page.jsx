@@ -47,11 +47,11 @@ function OrderDetails({ order }) {
 
 export default function SalesHistoryPage() {
   const {
-    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
-  } = usePosOutlet();
+    canSelectOutlet, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet({ allowAllLocations: true });
   const {
     orders, loading, error, canRead, loadOrders,
-  } = usePosSales(selectedOutletId);
+  } = usePosSales(selectedOutletId, { allowAllLocations: true });
   useToastMessages({ error });
   const [filters, setFilters] = useState({ from: '', to: '', paymentMethod: '' });
   const [selected, setSelected] = useState(null);
@@ -75,7 +75,8 @@ export default function SalesHistoryPage() {
         <Button variant="secondary" onClick={() => loadOrders(filters)} disabled={loading}><RefreshCw size={16} /> <T>{"Refresh"}</T></Button>
       </header>
       <PosOutletSelector
-        isSuperAdmin={isSuperAdmin}
+        isSuperAdmin={canSelectOutlet}
+        allowAll={canSelectOutlet}
         outlets={outlets}
         selectedOutletId={selectedOutletId}
         loading={loadingOutlets}

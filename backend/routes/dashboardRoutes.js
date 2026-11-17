@@ -10,6 +10,7 @@ const router = express.Router();
 
 router.get('/', authMiddleware, authorizeMiddleware({ permissions: ['dashboard:read'] }), enforceLocationScope.forDashboard, [
   query('locationId').optional().isMongoId().withMessage('Location must be a valid ID'),
+  query('selectedOutletId').optional().isMongoId().withMessage('Location must be a valid ID'),
   query('lowStockThreshold').optional().isFloat({ min: 0 }).withMessage('Threshold must be 0 or more').toFloat(),
 ], validateRequest, async (req, res, next) => {
   try {

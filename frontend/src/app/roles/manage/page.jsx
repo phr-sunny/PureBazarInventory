@@ -10,11 +10,14 @@ import { createRole, deleteRole, getRoles, getUsers, updateRole } from '@/servic
 import { permissionGroups, presets, sensitivePrefixes, toFormPermissions } from './permission-options';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
-const emptyForm = { name: '', permissions: ['dashboard:read'], allowedLocationType: 'any' };
+const emptyForm = {
+  name: '', permissions: ['dashboard:read'], allowedLocationType: 'any', canViewAllLocations: false,
+};
 
 export default function RoleManagementPage() {
   const dispatch = useDispatch();
   const token = useSelector((state) => state.auth.token);
+  const isSuperAdmin = useSelector((state) => state.auth.user?.role === 'Super Admin');
   const [roles, setRoles] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +57,12 @@ export default function RoleManagementPage() {
 
   function startEdit(role) {
     setEditingRole(role);
-    setForm({ name: role.name, permissions: toFormPermissions(role.permissions || []), allowedLocationType: role.allowedLocationType || 'any' });
+    setForm({
+      name: role.name,
+      permissions: toFormPermissions(role.permissions || []),
+      allowedLocationType: role.allowedLocationType || 'any',
+      canViewAllLocations: Boolean(role.canViewAllLocations),
+    });
     setError('');
     setDialogOpen(true);
   }
@@ -72,11 +80,11 @@ export default function RoleManagementPage() {
   async function submit(event) {
     event.preventDefault();
     setError('');
-    const isSuperAdmin = form.name.trim() === 'Super Admin';
+    const isSuperAdminRole = form.name.trim() === 'Super Admin';
     const sensitivePermissions = form.permissions.filter((permission) => (
       sensitivePrefixes.some((prefix) => permission.startsWith(prefix))
     ));
-    if (sensitivePermissions.length && !isSuperAdmin && !window.confirm(
+    if (sensitivePermissions.length && !isSuperAdminRole && !window.confirm(
       `High-risk access selected (${sensitivePermissions.join(', ')}). Save these permissions for this non-Super Admin role?`,
     )) return;
 
@@ -85,6 +93,7 @@ export default function RoleManagementPage() {
       name: form.name,
       permissions: [...new Set(form.permissions)],
       allowedLocationType: form.allowedLocationType,
+      ...(isSuperAdmin ? { canViewAllLocations: form.canViewAllLocations } : {}),
     };
     try {
       if (editingRole) await updateRole(token, editingRole._id, payload);
@@ -230,11 +239,27 @@ export default function RoleManagementPage() {
               ))}
             </div>
           </div>
-          <Select label="Works at" name="allowedLocationType" value={form.allowedLocationType} onChange={(event) => setForm((current) => ({ ...current, allowedLocationType: event.target.value }))} required options={[
-            { value: 'any', label: 'Any location' },
-            { value: 'warehouse', label: 'Central Warehouse' },
-            { value: 'outlet', label: 'Outlet' },
-          ]} />
+          <div className={`grid items-end gap-3 ${isSuperAdmin ? 'sm:grid-cols-2' : ''}`}>
+            <Select label="Works at" name="allowedLocationType" value={form.allowedLocationType} onChange={(event) => setForm((current) => ({ ...current, allowedLocationType: event.target.value }))} required options={[
+              { value: 'any', label: 'Any location' },
+              { value: 'warehouse', label: 'Central Warehouse' },
+              { value: 'outlet', label: 'Outlet' },
+            ]} />
+            {isSuperAdmin && (
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  name="canViewAllLocations"
+                  checked={form.canViewAllLocations}
+                  onChange={(event) => setForm((current) => ({
+                    ...current, canViewAllLocations: event.target.checked,
+                  }))}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                Can view all locations (read-only)
+              </label>
+            )}
+          </div>
           {form.name.trim() !== 'Super Admin' && form.permissions.some((permission) => (
             sensitivePrefixes.some((prefix) => permission.startsWith(prefix))
           )) && (

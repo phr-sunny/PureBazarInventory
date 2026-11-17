@@ -55,7 +55,10 @@ describe('auth endpoints', () => {
     expect(response.headers.authorization).toMatch(/^Bearer /);
     expect(response.body).toMatchObject({
       success: true,
-      user: { id: userId, name: 'Admin User', email: 'admin@example.test', role: 'Super Admin' },
+      user: {
+        id: userId, name: 'Admin User', email: 'admin@example.test',
+        role: 'Super Admin', canViewAllLocations: true,
+      },
     });
     expect(response.body.user.passwordHash).toBeUndefined();
     expect(jwt.verify(response.body.token, secret).sub).toBe(userId);
@@ -92,7 +95,9 @@ describe('auth endpoints', () => {
 
   it('includes the assigned location details in login and current user profiles', async () => {
     const location = { _id: '65b000000000000000000003', name: 'Outlet One', type: 'OUTLET' };
-    const assignedUser = { ...user, roleId: { name: 'Team', permissions: [] }, locationId: location };
+    const assignedUser = {
+      ...user, roleId: { name: 'Team', permissions: [], canViewAllLocations: true }, locationId: location,
+    };
     User.findOne.mockReturnValue({ select: jest.fn().mockReturnValue({ populate: jest.fn().mockResolvedValue(assignedUser) }) });
     User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue(assignedUser) });
     const login = await request(app).post('/api/auth/login')
@@ -101,7 +106,7 @@ describe('auth endpoints', () => {
     for (const result of [login.body.user, profile.body.user]) {
       expect(result).toMatchObject({
         locationId: location._id, location: { id: location._id, name: location.name, type: location.type },
-        isLocationLocked: true,
+        isLocationLocked: true, canViewAllLocations: true,
       });
     }
   });

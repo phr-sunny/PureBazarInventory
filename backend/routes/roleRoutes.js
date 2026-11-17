@@ -33,6 +33,8 @@ const roleFields = [
     .withMessage('Permission is not supported'),
   body('allowedLocationType').optional().isIn(['any', 'warehouse', 'outlet'])
     .withMessage('Works at must be any, warehouse, or outlet'),
+  body('canViewAllLocations').optional().isBoolean()
+    .withMessage('Can view all locations must be true or false'),
 ];
 
 router.get('/', adminOnly, rolesController.list);

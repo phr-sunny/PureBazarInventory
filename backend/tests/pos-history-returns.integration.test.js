@@ -5,7 +5,7 @@ const request = require('supertest');
 
 jest.mock('../models', () => ({
   AuditLog: { create: jest.fn() },
-  Location: { findById: jest.fn() },
+  Location: { find: jest.fn(), findById: jest.fn() },
   Order: {
     find: jest.fn(), findById: jest.fn(), findOneAndUpdate: jest.fn(),
   },
@@ -31,6 +31,7 @@ const shareholderId = new mongoose.Types.ObjectId('65b000000000000000000016');
 
 function query(value) {
   const chain = {
+    select: jest.fn(() => chain),
     session: jest.fn(() => chain),
     sort: jest.fn(() => chain),
     limit: jest.fn(() => chain),
@@ -90,6 +91,12 @@ describe('POS history and returns API', () => {
       populate: jest.fn().mockImplementation(async () => user),
     });
     models.Location.findById.mockReturnValue(query({ _id: outletId, type: 'OUTLET', isActive: true }));
+    models.Location.find.mockReturnValue({
+      select: jest.fn(() => query([
+        { _id: outletId },
+        { _id: otherOutletId },
+      ])),
+    });
     models.Order.findById.mockImplementation((id) => query(
       id.toString() === orderId.toString() ? db.order : null,
     ));
@@ -195,7 +202,8 @@ describe('POS history and returns API', () => {
 
   it('prevents a locked user from reading or returning another outlet bill', async () => {
     db.order.outlet = otherOutletId;
-    const history = await request(app).get('/api/pos/history').set(auth());
+    const history = await request(app).get('/api/pos/history')
+      .query({ selectedOutletId: otherOutletId.toString() }).set(auth());
     const returned = await request(app).post(`/api/pos/${orderId}/return`).set(auth()).send({});
 
     expect(history.status).toBe(200);
@@ -205,6 +213,30 @@ describe('POS history and returns API', () => {
     expect(returned.body.message).toMatch(/selected outlet/i);
     expect(models.Return.create).not.toHaveBeenCalled();
     expect(models.StockMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('lets an opted-in role query any outlet or all sales but still locks bill returns', async () => {
+    user = {
+      ...user,
+      roleId: { name: 'Team', permissions: ['pos:read', 'pos:write'], canViewAllLocations: true },
+    };
+    const selected = await request(app).get('/api/pos/history')
+      .query({ selectedOutletId: otherOutletId.toString() }).set(auth());
+    expect(selected.status).toBe(200);
+    expect(models.Order.find).toHaveBeenCalledWith(expect.objectContaining({ outlet: otherOutletId.toString() }));
+
+    models.Order.find.mockClear();
+    const all = await request(app).get('/api/pos/history').set(auth());
+    expect(all.status).toBe(200);
+    expect(models.Order.find).toHaveBeenCalledWith(expect.objectContaining({
+      outlet: { $in: [outletId, otherOutletId] },
+    }));
+
+    db.order.outlet = otherOutletId;
+    const returned = await request(app).post(`/api/pos/${orderId}/return`)
+      .query({ selectedOutletId: otherOutletId.toString() }).set(auth()).send({});
+    expect(returned.status).toBe(403);
+    expect(models.Return.create).not.toHaveBeenCalled();
   });
 
   it('blocks a second return without posting duplicate stock or ledger entries', async () => {

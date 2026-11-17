@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const {
-  AuditLog, Order, Product, Return, StockMovement, VendorLedger, WalletLog,
+  AuditLog, Location, Order, Product, Return, StockMovement, VendorLedger, WalletLog,
 } = require('../models');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 const { statusError } = require('./posBillService');
@@ -50,7 +50,15 @@ async function listSalesHistory(req) {
   const filter = {};
   const clauses = [];
 
-  filter.outlet = req.locationId;
+  if (req.locationId) {
+    filter.outlet = req.locationId;
+  } else {
+    const activeOutlets = await Location.find({
+      type: 'OUTLET',
+      isActive: { $ne: false },
+    }).select('_id').lean();
+    filter.outlet = { $in: activeOutlets.map((location) => location._id) };
+  }
   if (query.cashier) filter.cashier = query.cashier;
   if (query.shareholderId) filter.memberId = query.shareholderId;
   if (query.paymentMethod) filter['payments.method'] = query.paymentMethod;

@@ -681,6 +681,11 @@
 	- Decisions: dashboard scope comes from req.locationId; All includes active central/outlet locations, and location-locked users cannot override their assignment. Orders, stock movements, expenses, vendor ledger, trends, role dashboards, and recent activity are location-filtered; statement payables are allocated by vendor ledger share within each statement period. Stock movements stay grouped by warehouseId, so transfers update each location without being counted as sales. Super Admin selection persists in sessionStorage across pages; other users see their login-payload location read-only.
 	- Validation: full backend Jest passes (45 suites, 281 tests), including direct per-location calculations, additive All totals, and locked-user override coverage; frontend production build passes.
 
+- [x] P4b All-locations view
+	- Files: Role.canViewAllLocations setting, Super Admin role editor checkbox, auth login/me payloads, read-only location scope, dashboard and sales-history selectors, and focused role/auth/location tests.
+	- Decisions: New roles default to false; existing role values are not migrated. Super Admin always views all locations. The setting does not grant page permissions or change write scoping; the existing Central Warehouse stock-count exception remains. Dashboard location selection remains shared in sessionStorage; sales history defaults to All active outlets.
+	- Validation: backend Jest passes (45 suites, 286 tests); frontend production build passes; frontend tests remain 28/29 due to nine existing untranslated UI literals in unrelated screens; git diff --check passes.
+
 - [x] P5 Stock scope
 	- Files: location-scope middleware and stock helpers/controllers/routes; location-filtered transfer workflow; stock count and adjustment screens; Central Warehouse Stock scope; new Outlet Inventory API/screen and navigation; optional product SKU support; role permission mapping; integration tests.
 	- Decisions: outlet users remain locked to their assigned location; central users may view active locations and create/post counts there, while adjustments, GRNs, transfers, and POS remain location-locked. Transfer reads/actions are restricted to source/destination locations. All stock totals and count differences use StockMovement rows by warehouseId; count posting audit metadata records postedBy and warehouseId.

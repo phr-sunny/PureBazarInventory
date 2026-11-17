@@ -11,6 +11,11 @@ const validateRequest = require('../middlewares/validateRequest');
 const router = express.Router();
 const outletScope = enforceLocationScope.forOutlet;
 const read = [authMiddleware, authorizeMiddleware({ permissions: ['pos:read'] }), outletScope];
+const salesHistoryRead = [
+  authMiddleware,
+  authorizeMiddleware({ permissions: ['pos:read'] }),
+  enforceLocationScope.forSalesHistory,
+];
 const write = [authMiddleware, authorizeMiddleware({ permissions: ['pos:write'] }), outletScope];
 const manageShifts = [authMiddleware, authorizeMiddleware({ permissions: ['shifts:manage'] }), outletScope];
 const paymentMethods = ['CASH', 'BKASH', 'NAGAD', 'CARD', 'WALLET'];
@@ -20,7 +25,7 @@ const validDate = (value) => {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
 
-router.get('/history', read, [
+router.get('/history', salesHistoryRead, [
   query('outlet').optional().isMongoId(),
   query('cashier').optional().isMongoId(),
   query('shareholderId').optional().isMongoId(),

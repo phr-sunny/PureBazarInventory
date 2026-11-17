@@ -4,16 +4,17 @@ import { useEffect, useState } from 'react';
 import useAuth from '@/store/use-auth';
 import { getLocations } from '@/services/stock';
 
-export default function usePosOutlet() {
+export default function usePosOutlet({ allowAllLocations = false } = {}) {
   const { token, user } = useAuth();
   const isSuperAdmin = user?.role === 'Super Admin' || user?.permissions?.includes('*');
+  const canSelectOutlet = isSuperAdmin || (allowAllLocations && Boolean(user?.canViewAllLocations));
   const [outlets, setOutlets] = useState([]);
   const [selectedOutletId, setSelectedOutletId] = useState('');
   const [loadingOutlets, setLoadingOutlets] = useState(false);
   const [outletError, setOutletError] = useState('');
 
   useEffect(() => {
-    if (!isSuperAdmin || !token) {
+    if (!canSelectOutlet || !token) {
       setOutlets([]);
       setSelectedOutletId('');
       setLoadingOutlets(false);
@@ -29,7 +30,9 @@ export default function usePosOutlet() {
       const activeOutlets = data.locations.filter((location) => location.isActive);
       setOutlets(activeOutlets);
       setSelectedOutletId((current) => (
-        activeOutlets.some((location) => location.id === current) ? current : ''
+        current === 'all' && allowAllLocations
+          ? current
+          : activeOutlets.some((location) => location.id === current) ? current : (allowAllLocations ? 'all' : '')
       ));
     }).catch((error) => {
       if (active) setOutletError(error.response?.data?.message || 'Unable to load active outlets.');
@@ -38,10 +41,11 @@ export default function usePosOutlet() {
     });
 
     return () => { active = false; };
-  }, [isSuperAdmin, token]);
+  }, [allowAllLocations, canSelectOutlet, token]);
 
   return {
     isSuperAdmin,
+    canSelectOutlet,
     outlets,
     selectedOutletId,
     setSelectedOutletId,

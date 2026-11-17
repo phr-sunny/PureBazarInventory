@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 
 function createLocationScopeMiddleware({
   outletOnly = false,
+  allLocationsOnRead = false,
   allowCentralLocationSelection = false,
   locationQueryParam = null,
 } = {}) {
@@ -16,19 +17,26 @@ function createLocationScopeMiddleware({
       }
 
       const superAdmin = isSuperAdmin(req.user);
+      const canViewAllLocations = Boolean(req.user.canViewAllLocations);
+      const isRead = req.method === 'GET';
       const assignedLocationId = locationIdOf(req.user.locationId);
       const canSelectLocation = superAdmin
+        || (canViewAllLocations && isRead)
         || (allowCentralLocationSelection && req.user.location?.type === 'CENTRAL');
       const selectedLocationId = locationQueryParam
-        ? req.query[locationQueryParam] || null
+        ? req.query[locationQueryParam] || req.query.selectedOutletId || null
         : outletOnly
           ? req.query.selectedOutletId || null
           : req.query.selectedOutletId || req.query.warehouseId || req.body?.warehouseId || null;
       const locationId = canSelectLocation && selectedLocationId
         ? selectedLocationId
-        : (superAdmin ? null : assignedLocationId);
+        : (superAdmin || (canViewAllLocations && isRead && (!outletOnly || allLocationsOnRead))
+          ? null
+          : assignedLocationId);
 
-      if (!locationId && (!superAdmin || outletOnly)) {
+      const allLocationsAllowed = allLocationsOnRead && isRead && (superAdmin || canViewAllLocations);
+      const allLocationsRead = canViewAllLocations && isRead && (!outletOnly || allLocationsOnRead);
+      if (!locationId && !allLocationsRead && (!superAdmin || (outletOnly && !allLocationsAllowed))) {
         const error = new Error(superAdmin && outletOnly
           ? 'Select an outlet to use POS'
           : 'User has no assigned location');
@@ -36,7 +44,8 @@ function createLocationScopeMiddleware({
         throw error;
       }
 
-      if ((allowCentralLocationSelection || locationQueryParam) && canSelectLocation && selectedLocationId) {
+      if ((allowCentralLocationSelection || locationQueryParam || (canViewAllLocations && isRead))
+        && canSelectLocation && selectedLocationId) {
         if (!mongoose.isValidObjectId(locationId)) {
           const error = new Error('Select a valid location');
           error.status = 400;
@@ -51,6 +60,11 @@ function createLocationScopeMiddleware({
       }
 
       if (outletOnly) {
+        if (allLocationsAllowed && !locationId) {
+          req.locationId = null;
+          req.locationType = req.user.location?.type || null;
+          return next();
+        }
         if (!mongoose.isValidObjectId(locationId)) {
           const error = new Error(superAdmin ? 'Select a valid outlet to use POS' : 'POS is only available to users assigned to an active outlet');
           error.status = superAdmin ? 400 : 403;
@@ -87,6 +101,10 @@ function createLocationScopeMiddleware({
 
 const enforceLocationScope = createLocationScopeMiddleware();
 enforceLocationScope.forOutlet = createLocationScopeMiddleware({ outletOnly: true });
+enforceLocationScope.forSalesHistory = createLocationScopeMiddleware({
+  outletOnly: true,
+  allLocationsOnRead: true,
+});
 enforceLocationScope.forStockRead = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
 enforceLocationScope.forStockCounts = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
 enforceLocationScope.forDashboard = createLocationScopeMiddleware({ locationQueryParam: 'locationId' });

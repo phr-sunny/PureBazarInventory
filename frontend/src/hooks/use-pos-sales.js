@@ -5,18 +5,20 @@ import useAuth from '@/store/use-auth';
 import { getSalesHistory } from '@/services/pos-admin';
 import { buildSalesHistoryParams } from '@/services/pos-screen-utils.cjs';
 
-export default function usePosSales(selectedOutletId) {
+export default function usePosSales(selectedOutletId, { allowAllLocations = false } = {}) {
   const {
     initialized, token, user, hasPermission,
   } = useAuth();
   const canRead = hasPermission('pos:read');
   const isSuperAdmin = user?.role === 'Super Admin' || user?.permissions?.includes('*');
+  const canSelectOutlet = isSuperAdmin || (allowAllLocations && Boolean(user?.canViewAllLocations));
+  const canReadAllLocations = allowAllLocations && canSelectOutlet;
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadOrders = useCallback(async (filters = {}) => {
-    if (isSuperAdmin && !selectedOutletId) {
+    if (canSelectOutlet && !selectedOutletId && !canReadAllLocations) {
       setOrders([]);
       setLoading(false);
       setError('');
@@ -27,7 +29,7 @@ export default function usePosSales(selectedOutletId) {
     try {
       const { data } = await getSalesHistory({
         ...buildSalesHistoryParams(filters),
-        ...(isSuperAdmin ? { selectedOutletId } : {}),
+        ...(canSelectOutlet && selectedOutletId && selectedOutletId !== 'all' ? { selectedOutletId } : {}),
       });
       setOrders(data.orders);
     } catch (requestError) {
@@ -35,7 +37,7 @@ export default function usePosSales(selectedOutletId) {
     } finally {
       setLoading(false);
     }
-  }, [isSuperAdmin, selectedOutletId]);
+  }, [canReadAllLocations, canSelectOutlet, selectedOutletId]);
 
   useEffect(() => {
     if (!initialized) return;

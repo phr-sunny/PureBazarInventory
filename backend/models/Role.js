@@ -4,6 +4,7 @@ const roleSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true, trim: true },
   permissions: { type: [String], default: [] },
   allowedLocationType: { type: String, enum: ['any', 'warehouse', 'outlet'], default: 'any' },
+  canViewAllLocations: { type: Boolean, default: false },
 }, { timestamps: true });
 
 roleSchema.index({ createdAt: 1 });

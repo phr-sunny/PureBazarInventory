@@ -3,10 +3,11 @@ const jwt = require('jsonwebtoken');
 const request = require('supertest');
 
 jest.mock('../models', () => ({
+  Location: { findById: jest.fn() },
   User: { findById: jest.fn() },
 }));
 
-const { User } = require('../models');
+const { Location, User } = require('../models');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
 const enforceLocationScope = require('../middlewares/enforceLocationScope');
@@ -29,6 +30,15 @@ function createApp() {
   }), (req, res) => res.json({ user: req.user.id }));
   app.post('/scope/:locationId/:outletId/:warehouseId', authMiddleware, enforceLocationScope, (req, res) => {
     res.json({ locationId: req.locationId, query: req.query, body: req.body, params: req.params });
+  });
+  app.get('/scope', authMiddleware, enforceLocationScope, (req, res) => {
+    res.json({ locationId: req.locationId });
+  });
+  app.get('/sales-scope', authMiddleware, enforceLocationScope.forSalesHistory, (req, res) => {
+    res.json({ locationId: req.locationId });
+  });
+  app.post('/counts-scope', authMiddleware, enforceLocationScope.forStockCounts, (req, res) => {
+    res.json({ locationId: req.locationId, warehouseId: req.body.warehouseId });
   });
   app.post('/validated', body('name').isString().notEmpty(), validateRequest, (req, res) => {
     res.json({ name: req.body.name });
@@ -57,6 +67,10 @@ describe('middleware integration', () => {
   beforeEach(() => {
     process.env.JWT_SECRET = secret;
     User.findById.mockReset();
+    Location.findById.mockReset();
+    Location.findById.mockImplementation((id) => ({
+      select: () => ({ lean: async () => ({ _id: id, type: 'OUTLET', isActive: true }) }),
+    }));
   });
 
   it('authenticates a bearer token and loads the current role permissions', async () => {
@@ -140,7 +154,10 @@ describe('middleware integration', () => {
       .query({ locationId: other, outletId: other, warehouseId: other, selectedOutletId: other })
       .set('Authorization', `Bearer ${tokenFor()}`)
       .send({ locationId: other, outletId: other, warehouseId: other });
+    const selectedRead = await request(app).get('/scope').query({ selectedOutletId: other })
+      .set('Authorization', `Bearer ${tokenFor()}`);
     expect(response.status).toBe(200);
+    expect(selectedRead.body.locationId).toBe(assigned);
     expect(response.body.locationId).toBe(assigned);
     for (const source of [response.body.query, response.body.body, response.body.params]) {
       expect(source).toMatchObject({ locationId: assigned, outletId: assigned, warehouseId: assigned });
@@ -159,6 +176,59 @@ describe('middleware integration', () => {
       .set('Authorization', `Bearer ${tokenFor()}`);
     expect(selectedResponse.body.locationId).toBe(selected);
     expect(allResponse.body.locationId).toBeNull();
+  });
+
+  it('allows an opted-in role to read a selected location or all locations, but locks writes', async () => {
+    const assigned = '65b000000000000000000003';
+    const other = '65b000000000000000000004';
+    const user = {
+      _id: userId,
+      isActive: true,
+      roleId: { name: 'Team', permissions: [], canViewAllLocations: true },
+      locationId: assigned,
+    };
+    setUser(user);
+
+    const selected = await request(app).get('/scope').query({ selectedOutletId: other })
+      .set('Authorization', `Bearer ${tokenFor()}`);
+    const all = await request(app).get('/scope').set('Authorization', `Bearer ${tokenFor()}`);
+    const write = await request(app).post(`/scope/${other}/${other}/${other}`)
+      .query({ selectedOutletId: other, warehouseId: other })
+      .set('Authorization', `Bearer ${tokenFor()}`)
+      .send({ warehouseId: other });
+
+    expect(selected.body.locationId).toBe(other);
+    expect(all.body.locationId).toBeNull();
+    expect(write.body.locationId).toBe(assigned);
+    expect(write.body.query.warehouseId).toBe(assigned);
+    expect(write.body.body.warehouseId).toBe(assigned);
+    expect(write.body.params.locationId).toBe(assigned);
+  });
+
+  it('allows all-location sales history and preserves the central stock-count exception', async () => {
+    const assigned = '65b000000000000000000003';
+    const other = '65b000000000000000000004';
+    setUser({
+      _id: userId,
+      isActive: true,
+      roleId: { name: 'Team', permissions: [], canViewAllLocations: true },
+      locationId: assigned,
+    });
+    const allSales = await request(app).get('/sales-scope').set('Authorization', `Bearer ${tokenFor()}`);
+    expect(allSales.status).toBe(200);
+    expect(allSales.body.locationId).toBeNull();
+
+    setUser({
+      _id: userId,
+      isActive: true,
+      roleId: { name: 'Central Team', permissions: [] },
+      locationId: { _id: assigned, name: 'Central Warehouse', type: 'CENTRAL' },
+      location: { type: 'CENTRAL' },
+    });
+    const count = await request(app).post('/counts-scope').query({ warehouseId: other })
+      .set('Authorization', `Bearer ${tokenFor()}`).send({ warehouseId: other });
+    expect(count.status).toBe(200);
+    expect(count.body).toEqual({ locationId: other, warehouseId: other });
   });
 
   it('returns validation errors and consistent central error responses', async () => {

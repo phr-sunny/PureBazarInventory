@@ -64,6 +64,7 @@ const sum = (items, pick) => items.reduce((total, item) => (
 let roleName;
 let permissions;
 let assignedLocationId;
+let canViewAllLocations;
 let reportDate;
 
 function seed() {
@@ -130,13 +131,14 @@ describe('location-scoped dashboard API', () => {
     roleName = 'Super Admin';
     permissions = ['*'];
     assignedLocationId = null;
+    canViewAllLocations = false;
     seed();
     models.User.findById.mockImplementation(() => ({
       populate: jest.fn(async () => ({
         _id: userId,
         isActive: true,
         locationId: assignedLocationId ? { _id: assignedLocationId, name: 'Outlet One', type: 'OUTLET' } : null,
-        roleId: { _id: userId, name: roleName, permissions },
+        roleId: { _id: userId, name: roleName, permissions, canViewAllLocations },
       })),
     }));
   });
@@ -195,12 +197,33 @@ describe('location-scoped dashboard API', () => {
     assignedLocationId = outlet;
 
     const response = await load(central);
+    const selectedOutletParam = await request(app).get(`/api/dashboard?selectedOutletId=${central}`).set(auth());
 
     expect(response.status).toBe(200);
+    expect(selectedOutletParam.status).toBe(200);
     expect(response.body.dashboard.totalSales).toBe(100);
+    expect(selectedOutletParam.body.dashboard.totalSales).toBe(100);
     expect(response.body.dashboard.marginIncome).toBe(12);
     expect(response.body.dashboard.monthExpenses).toBe(5);
     expect(response.body.dashboard.vendorPayablesDue).toBe(50);
     expect(response.body.dashboard.recentActivity.map((item) => item.action)).toEqual(['OUTLET_ACTION']);
+  });
+
+  it('allows an opted-in role to see selected-location and additive All dashboard data', async () => {
+    roleName = 'Operations Manager';
+    permissions = ['dashboard:read', 'finance:read'];
+    assignedLocationId = outlet;
+    canViewAllLocations = true;
+
+    const [allResponse, centralResponse] = await Promise.all([
+      load(), load(central),
+    ]);
+
+    expect(allResponse.status).toBe(200);
+    expect(allResponse.body.dashboard.totalSales).toBe(300);
+    expect(allResponse.body.dashboard.monthExpenses).toBe(12);
+    expect(centralResponse.status).toBe(200);
+    expect(centralResponse.body.dashboard.totalSales).toBe(200);
+    expect(centralResponse.body.dashboard.monthExpenses).toBe(7);
   });
 });

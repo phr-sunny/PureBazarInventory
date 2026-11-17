@@ -218,6 +218,7 @@ describe('users and roles endpoints', () => {
     expect(Role.create).toHaveBeenCalledWith({
       name: 'Stock Viewer',
       permissions: ['dashboard:read', ...createPermissions],
+      canViewAllLocations: false,
     });
     expect(Role.findByIdAndUpdate).toHaveBeenCalledWith(roleId, {
       name: 'Inventory Team', permissions: updatePermissions,
@@ -237,6 +238,7 @@ describe('users and roles endpoints', () => {
     expect(Role.create).toHaveBeenCalledWith({
       name: 'Shareholder Manager',
       permissions: ['dashboard:read', 'shareholders:read', 'shareholders:write'],
+      canViewAllLocations: false,
     });
   });
 
@@ -305,6 +307,47 @@ describe('users and roles endpoints', () => {
       entity: 'Role', before: expect.objectContaining({ allowedLocationType: 'any' }),
       after: expect.objectContaining({ allowedLocationType: 'warehouse' }),
     }));
+  });
+
+  it('validates, saves, and audits canViewAllLocations changes', async () => {
+    const invalid = await request(app).post('/api/roles').set(auth).send({
+      name: 'Invalid Location Viewer', permissions: [], canViewAllLocations: 'yes',
+    });
+    expect(invalid.status).toBe(400);
+
+    Role.create.mockResolvedValue({ ...role, canViewAllLocations: true });
+    const created = await request(app).post('/api/roles').set(auth).send({
+      name: 'Location Viewer', permissions: [], canViewAllLocations: true,
+    });
+    expect(created.status).toBe(201);
+    expect(Role.create).toHaveBeenCalledWith(expect.objectContaining({ canViewAllLocations: true }));
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      entity: 'Role', action: 'CREATE', after: expect.objectContaining({ canViewAllLocations: true }),
+    }));
+
+    Role.findById.mockResolvedValue({ ...role, canViewAllLocations: false });
+    Role.findByIdAndUpdate.mockResolvedValue({ ...role, canViewAllLocations: true });
+    const updated = await request(app).put(`/api/roles/${roleId}`).set(auth).send({
+      name: 'Location Viewer', permissions: [], canViewAllLocations: true,
+    });
+    expect(updated.status).toBe(200);
+    expect(Role.findByIdAndUpdate).toHaveBeenCalledWith(roleId, expect.objectContaining({
+      canViewAllLocations: true,
+    }), { new: true, runValidators: true });
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      entity: 'Role',
+      action: 'UPDATE',
+      before: expect.objectContaining({ canViewAllLocations: false }),
+      after: expect.objectContaining({ canViewAllLocations: true }),
+    }));
+
+    Role.findById.mockResolvedValue({ ...role, canViewAllLocations: true });
+    Role.findByIdAndUpdate.mockResolvedValue({ ...role, canViewAllLocations: true });
+    const unchanged = await request(app).put(`/api/roles/${roleId}`).set(auth).send({
+      name: 'Location Viewer', permissions: [],
+    });
+    expect(unchanged.status).toBe(200);
+    expect(Role.findByIdAndUpdate.mock.calls[1][0]).not.toHaveProperty('canViewAllLocations');
   });
 
   it('protects the Super Admin role and prevents deleting assigned roles', async () => {

@@ -27,10 +27,14 @@ async function create(req, res, next) {
     const role = await Role.create({
       name: req.body.name, permissions,
       ...(req.body.allowedLocationType !== undefined ? { allowedLocationType: req.body.allowedLocationType } : {}),
+      canViewAllLocations: req.body.canViewAllLocations === true,
     });
     await AuditLog.create({
       actorId: req.user._id, action: 'CREATE', entity: 'Role', entityId: role._id,
-      after: { name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType }, ipAddress: req.ip,
+      after: {
+        name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType,
+        canViewAllLocations: role.canViewAllLocations,
+      }, ipAddress: req.ip,
     });
     return res.status(201).json({ success: true, role });
   } catch (error) {
@@ -46,15 +50,20 @@ async function update(req, res, next) {
     const before = {
       name: currentRole.name, permissions: currentRole.permissions,
       allowedLocationType: currentRole.allowedLocationType || 'any',
+      canViewAllLocations: currentRole.canViewAllLocations || false,
     };
     const role = await Role.findByIdAndUpdate(req.params.id, {
       name: req.body.name,
       permissions: expandPermissions(req.body.permissions || []),
       ...(req.body.allowedLocationType !== undefined ? { allowedLocationType: req.body.allowedLocationType } : {}),
+      ...(req.body.canViewAllLocations !== undefined ? { canViewAllLocations: req.body.canViewAllLocations } : {}),
     }, { new: true, runValidators: true });
     await AuditLog.create({
       actorId: req.user._id, action: 'UPDATE', entity: 'Role', entityId: role._id, before,
-      after: { name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType || 'any' }, ipAddress: req.ip,
+      after: {
+        name: role.name, permissions: role.permissions, allowedLocationType: role.allowedLocationType || 'any',
+        canViewAllLocations: role.canViewAllLocations || false,
+      }, ipAddress: req.ip,
     });
     return res.json({ success: true, role });
   } catch (error) {
@@ -71,7 +80,10 @@ async function remove(req, res, next) {
     await Role.findByIdAndDelete(role._id);
     await AuditLog.create({
       actorId: req.user._id, action: 'DELETE', entity: 'Role', entityId: role._id,
-      before: { name: role.name, permissions: role.permissions }, ipAddress: req.ip,
+      before: {
+        name: role.name, permissions: role.permissions,
+        canViewAllLocations: role.canViewAllLocations || false,
+      }, ipAddress: req.ip,
     });
     return res.json({ success: true, message: 'Role deleted successfully' });
   } catch (error) {

@@ -58,6 +58,7 @@ async function loadUser(userId, req, next) {
       locationId: admin ? null : locationIdOf(user.locationId),
       location: !admin && location ? { id: location._id.toString(), name: location.name, type: location.type } : null,
       isLocationLocked: !admin && Boolean(user.locationId),
+      canViewAllLocations: admin || Boolean(role?.canViewAllLocations),
       permissions: expandPermissions(Array.isArray(role?.permissions)
         ? role.permissions
         : Array.isArray(user.permissions) ? user.permissions : []),

@@ -22,9 +22,10 @@ export default function Header({ section, onMenuClick }) {
   const [locationId, setLocationId] = useState('all');
   const [locationError, setLocationError] = useState('');
   const isSuperAdmin = user?.role === 'Super Admin';
+  const canViewAllLocations = isSuperAdmin || Boolean(user?.canViewAllLocations);
 
   useEffect(() => {
-    if (!isSuperAdmin || !token) {
+    if (!canViewAllLocations || !token) {
       setLocations([]);
       setLocationError('');
       return undefined;
@@ -42,7 +43,7 @@ export default function Header({ section, onMenuClick }) {
         if (active) setLocationError(t('Unable to load locations.'));
       });
     return () => { active = false; };
-  }, [isSuperAdmin, t, token]);
+  }, [canViewAllLocations, t, token]);
 
   function changeLocation(event) {
     const selected = event.target.value;
@@ -81,7 +82,7 @@ export default function Header({ section, onMenuClick }) {
         </div>
       </div>
       <div className="header-actions">
-      {isSuperAdmin ? (
+      {canViewAllLocations ? (
         <>
           <label className="header-location">
             <span className="sr-only">{t('Dashboard location')}</span>
