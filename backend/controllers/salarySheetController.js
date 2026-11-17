@@ -118,6 +118,7 @@ async function salaryCategory() {
 async function paySheet(req, res, next) {
   let expense;
   try {
+    if (!req.locationId) throw statusError('An expense location is required', 400);
     const sheet = await loadSheet(req.params.id);
     if (sheet.status !== 'Approved' || sheet.expenseId) {
       throw statusError('Only approved salary sheets can be paid', 409);
@@ -130,7 +131,7 @@ async function paySheet(req, res, next) {
       expenseDate: new Date(Date.UTC(year, month, 0, 12)),
       description: `Salary ${sheet.month}`,
       paymentMethod: req.body.paymentMethod,
-      locationId: req.body.locationId,
+      locationId: req.locationId,
       createdBy: req.user._id,
       sourceType: 'SALARY_SHEET',
       sourceId: sheet._id,

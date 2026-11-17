@@ -24,7 +24,9 @@ async function assertReferences({ categoryId, locationId }) {
   }
   if (locationId) {
     const location = await Location.findById(locationId).lean();
-    if (!location) throw statusError('Location not found', 404);
+    if (!location || location.isActive === false) throw statusError('Select an active location', 400);
+  } else {
+    throw statusError('An expense location is required', 400);
   }
 }
 
@@ -36,7 +38,7 @@ function audit(req, action, entityId, before, after) {
 
 async function revenueLedger(req, res, next) {
   try {
-    const ledger = await getRevenueLedger(req.query.startDate, req.query.endDate);
+    const ledger = await getRevenueLedger(req.query.startDate, req.query.endDate, req.locationId);
     return res.json({ success: true, ...ledger });
   } catch (error) {
     return next(error);
@@ -73,9 +75,10 @@ async function listExpenses(req, res, next) {
       if (req.query.startDate) filter.expenseDate.$gte = new Date(`${req.query.startDate}T00:00:00.000Z`);
       if (req.query.endDate) filter.expenseDate.$lt = new Date(new Date(`${req.query.endDate}T00:00:00.000Z`).getTime() + 86400000);
     }
-    ['categoryId', 'locationId', 'paymentMethod'].forEach((name) => {
+    ['categoryId', 'paymentMethod'].forEach((name) => {
       if (req.query[name]) filter[name] = req.query[name];
     });
+    if (req.locationId) filter.locationId = req.locationId;
     const expenses = await Expense.find(filter)
       .populate('categoryId', 'name')
       .populate('locationId', 'name type')
@@ -91,7 +94,7 @@ async function listExpenses(req, res, next) {
 async function createExpense(req, res, next) {
   try {
     const expenseDate = req.body.expenseDate ? new Date(req.body.expenseDate) : new Date();
-    await assertReferences(req.body);
+    await assertReferences({ ...req.body, locationId: req.locationId });
     await assertMonthOpen(expenseDate);
     const expense = await Expense.create({
       categoryId: req.body.categoryId,
@@ -99,7 +102,7 @@ async function createExpense(req, res, next) {
       expenseDate,
       description: req.body.description,
       paymentMethod: req.body.paymentMethod,
-      locationId: req.body.locationId,
+      locationId: req.locationId,
       attachment: req.expenseAttachment,
       createdBy: req.user._id,
       sourceType: 'MANUAL',
@@ -115,15 +118,23 @@ async function updateExpense(req, res, next) {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) throw statusError('Expense not found', 404);
+    if (req.locationId && String(expense.locationId) !== String(req.locationId)) {
+      throw statusError('Expense not found', 404);
+    }
     if (expense.sourceType === 'SALARY_SHEET') throw statusError('Payroll expenses are managed by the salary sheet', 409);
     await assertMonthOpen(expense.expenseDate);
     const nextDate = req.body.expenseDate ? new Date(req.body.expenseDate) : expense.expenseDate;
     if (monthOf(nextDate) !== monthOf(expense.expenseDate)) await assertMonthOpen(nextDate);
-    await assertReferences(req.body);
+    await assertReferences({
+      ...req.body,
+      locationId: req.body.locationId === undefined ? expense.locationId : req.locationId,
+    });
 
     const before = expense.toObject();
     ['categoryId', 'amount', 'description', 'paymentMethod', 'locationId'].forEach((name) => {
-      if (req.body[name] !== undefined) expense[name] = req.body[name];
+      if (name === 'locationId' && req.locationId && req.body[name] !== undefined) {
+        expense[name] = req.locationId;
+      } else if (req.body[name] !== undefined) expense[name] = req.body[name];
     });
     expense.expenseDate = nextDate;
     if (req.expenseAttachment) expense.attachment = req.expenseAttachment;

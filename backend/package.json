@@ -12,7 +12,8 @@
     "backup": "node scripts/backupDb.js",
     "restore": "node scripts/restoreDb.js",
     "migrate:role-permissions": "node scripts/migrateRolePermissions.js",
-    "migrate:product-barcodes": "node scripts/migrateProductBarcodes.js"
+    "migrate:product-barcodes": "node scripts/migrateProductBarcodes.js",
+    "migrate:vendor-ledger-locations": "node scripts/migrateVendorLedgerLocations.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

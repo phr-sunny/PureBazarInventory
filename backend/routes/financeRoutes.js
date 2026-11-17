@@ -6,6 +6,7 @@ const walletReconciliationController = require('../controllers/walletReconciliat
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
 const expenseAttachmentUpload = require('../middlewares/expenseAttachmentUpload');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
@@ -26,13 +27,14 @@ const expenseFields = (optional) => {
     wrap(body('description')).isString().trim().isLength({ min: 1, max: 500 })
       .withMessage('Description must be 1 to 500 characters'),
     wrap(body('paymentMethod')).isIn(methods).withMessage('Invalid payment method'),
-    wrap(body('locationId')).isMongoId().withMessage('A valid location is required'),
+    body('locationId').optional().isMongoId().withMessage('A valid location is required'),
     body('expenseDate').optional().isISO8601({ strict: true }).withMessage('A valid expense date is required'),
   ];
 };
 
-router.get('/revenue-ledger', can('finance:read'), [
+router.get('/revenue-ledger', ...can('finance:read'), enforceLocationScope.forAccountingRead, [
   dateQuery('startDate'), dateQuery('endDate'),
+  query('locationId').optional().isMongoId().withMessage('A valid location is required'),
 ], validateRequest, financeController.revenueLedger);
 
 router.get('/expense-categories', can('expenses:read'), financeController.listExpenseCategories);
@@ -41,15 +43,15 @@ router.post('/expense-categories', can('expenses:write'), [
   body('description').optional().isString().trim().isLength({ max: 250 }),
 ], validateRequest, financeController.createExpenseCategory);
 
-router.get('/expenses', can('expenses:read'), [
+router.get('/expenses', ...can('expenses:read'), enforceLocationScope.forAccountingRead, [
   dateQuery('startDate', true), dateQuery('endDate', true),
   query('categoryId').optional().isMongoId(),
   query('locationId').optional().isMongoId(),
   query('paymentMethod').optional().isIn(methods),
 ], validateRequest, financeController.listExpenses);
-router.post('/expenses', ...can('expenses:write'), expenseAttachmentUpload,
+router.post('/expenses', ...can('expenses:write'), expenseAttachmentUpload, enforceLocationScope.forExpenseWrite,
   expenseFields(false), validateRequest, financeController.createExpense);
-router.patch('/expenses/:id', ...can('expenses:write'), expenseAttachmentUpload, [
+router.patch('/expenses/:id', ...can('expenses:write'), expenseAttachmentUpload, enforceLocationScope.forExpenseWrite, [
   param('id').isMongoId().withMessage('A valid expense ID is required'),
   ...expenseFields(true),
 ], validateRequest, financeController.updateExpense);

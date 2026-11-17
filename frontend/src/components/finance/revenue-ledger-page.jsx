@@ -6,6 +6,9 @@ import { useSelector } from 'react-redux';
 import { Button, Card, Input, Table } from '@/components/ui';
 import { getRevenueLedger } from '@/services/finance';
 import { firstDayOfMonth, formatFinanceMoney, localDateInput } from './finance-utils';
+import AccountingLocationFilter, {
+  accountingLocationParam, useAccountingLocations,
+} from './accounting-location-filter';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
 
@@ -20,8 +23,10 @@ const columns = [
 
 export default function RevenueLedgerPage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
+  const { canSelect, locations, loadingLocations, locationError } = useAccountingLocations(token, user);
   const canRead = user?.permissions?.includes('*') || user?.permissions?.includes('finance:read');
   const [period, setPeriod] = useState({ startDate: firstDayOfMonth(), endDate: localDateInput() });
+  const [selectedLocationId, setSelectedLocationId] = useState('all');
   const [ledger, setLedger] = useState({ categories: [], totals: null });
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
@@ -38,14 +43,17 @@ export default function RevenueLedgerPage() {
       setLoading(false);
       return () => { active = false; };
     }
-    getRevenueLedger(token, period)
+    getRevenueLedger(token, {
+      ...period,
+      locationId: accountingLocationParam(user, selectedLocationId),
+    })
       .then(({ data }) => active && setLedger(data))
       .catch((requestError) => active && setError(
         requestError.response?.data?.message || 'Unable to load the revenue ledger.',
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, period, reload, token]);
+  }, [canRead, period, reload, selectedLocationId, token, user]);
 
   if (!initialized) return <p role="status" className="py-10 text-center text-sm text-slate-500"><T>{"Loading revenue ledger..."}</T></p>;
   if (!token || !canRead) return <p role="alert" className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><T>{"You do not have permission to view the revenue ledger."}</T></p>;
@@ -68,11 +76,19 @@ export default function RevenueLedgerPage() {
 
 
       <Card title="Reporting period" description="VAT is reported separately and is not included in company income.">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Input label="From" name="startDate" type="date" value={period.startDate} onChange={(event) => setPeriod((value) => ({ ...value, startDate: event.target.value }))} />
           <Input label="To" name="endDate" type="date" value={period.endDate} onChange={(event) => setPeriod((value) => ({ ...value, endDate: event.target.value }))} />
+          <AccountingLocationFilter
+            canSelect={canSelect}
+            locations={locations}
+            loading={loadingLocations}
+            value={selectedLocationId}
+            onChange={setSelectedLocationId}
+          />
           <div className="flex items-end"><Button onClick={() => setReload((value) => value + 1)} disabled={loading}>Apply dates</Button></div>
         </div>
+        {locationError && <p role="alert" className="mt-3 text-sm text-red-700">{locationError}</p>}
       </Card>
 
       <Card title="Revenue by category">

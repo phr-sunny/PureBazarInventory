@@ -185,7 +185,7 @@ async function commitBill(req, res, next, offline) {
         entryType: 'SALE',
         vendorPayable: line.vendorPayable,
         companyNet: line.companyNet,
-        locationId: outletId,
+        locationId: created.outlet,
       }));
       if (ledgerRows.length) await VendorLedger.create(ledgerRows, { session, ordered: true });
       if (result.wallet && result.shareholder) {

@@ -45,7 +45,7 @@ describe('Finance and workforce models', () => {
     const cases = [
       [new models.Employee(), ['employeeCode', 'name', 'baseSalary']],
       [new models.SalaryAdvance(), ['employeeId', 'amount', 'reason']],
-      [new models.Expense(), ['categoryId', 'amount', 'description', 'paymentMethod', 'createdBy']],
+      [new models.Expense(), ['categoryId', 'amount', 'description', 'paymentMethod', 'locationId', 'createdBy']],
       [new models.ExpenseCategory(), ['name']],
       [new models.AuditLog(), ['actorId', 'action', 'entity']],
     ];
@@ -58,11 +58,17 @@ describe('Finance and workforce models', () => {
 
     const payrollExpense = new models.Expense({
       categoryId: objectId(), amount: 100, description: 'Payroll', paymentMethod: 'Cash',
-      createdBy: objectId(), sourceType: 'SALARY_SHEET',
+      locationId: objectId(), createdBy: objectId(), sourceType: 'SALARY_SHEET',
     });
     await expect(payrollExpense.validate()).rejects.toMatchObject({
       errors: { sourceId: expect.objectContaining({ message: expect.stringContaining('Salary sheet is required') }) },
     });
+
+    const legacyExpense = new models.Expense({
+      categoryId: objectId(), amount: 100, description: 'Legacy', paymentMethod: 'Cash', createdBy: objectId(),
+    });
+    legacyExpense.$isNew = false;
+    await expect(legacyExpense.validate()).resolves.toBeUndefined();
   });
 
   it('provides requested singleton settings defaults', async () => {

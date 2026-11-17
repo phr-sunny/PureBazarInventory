@@ -11,6 +11,9 @@ import {
   saveExpense,
 } from '@/services/finance';
 import {
+  accountingLocationParam, canSelectAccountingLocation,
+} from './accounting-location-filter';
+import {
   firstDayOfMonth,
   formatFinanceDate,
   formatFinanceMoney,
@@ -30,6 +33,7 @@ export default function ExpensesPage() {
   const permissions = user?.permissions || [];
   const canRead = permissions.includes('*') || permissions.includes('expenses:read');
   const canWrite = permissions.includes('*') || permissions.includes('expenses:write');
+  const canChooseLocation = canSelectAccountingLocation(user);
   const [categories, setCategories] = useState([]);
   const [locations, setLocations] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -59,21 +63,34 @@ export default function ExpensesPage() {
     }
     Promise.all([
       getExpenseCategories(token),
-      getExpenses(token, filters),
+      getExpenses(token, {
+        ...filters,
+        locationId: accountingLocationParam(user, filters.locationId || 'all'),
+      }),
       getLocations(token),
     ])
       .then(([categoryResponse, expenseResponse, locationResponse]) => {
         if (!active) return;
         setCategories(categoryResponse.data.categories);
         setExpenses(expenseResponse.data.expenses);
-        setLocations(locationResponse.data.locations);
+        const activeLocations = locationResponse.data.locations.filter((location) => location.isActive);
+        const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+        setLocations(canChooseLocation
+          ? activeLocations
+          : activeLocations.filter((location) => location.id === assignedLocationId));
+        if (!canChooseLocation && assignedLocationId) {
+          setForm((current) => ({ ...current, locationId: assignedLocationId }));
+          setFilters((current) => (current.locationId === assignedLocationId
+            ? current
+            : { ...current, locationId: assignedLocationId }));
+        }
       })
       .catch((requestError) => active && setError(
         requestError.response?.data?.message || 'Unable to load expenses and reference data.',
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, filters, reload, token]);
+  }, [canChooseLocation, canRead, filters, reload, token, user]);
 
   function startEdit(expense) {
     setEditingId(expense._id);
@@ -177,7 +194,7 @@ export default function ExpensesPage() {
               <textarea id="expense-description" className="ui-input min-h-20" required maxLength={500} value={form.description} onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))} />
             </label>
             <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
-              <Button type="submit" disabled={saving || !categories.length || !locations.length}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Record expense'}</Button>
+              <Button type="submit" disabled={saving || !categories.length || !form.locationId}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Record expense'}</Button>
               {editingId && <Button type="button" variant="secondary" onClick={cancelEdit}>Cancel</Button>}
             </div>
           </form>
@@ -196,10 +213,12 @@ export default function ExpensesPage() {
             <option value=""><T>{"All categories"}</T></option>
             {categories.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
           </Select>
-          <Select label="Location" name="locationFilter" value={filters.locationId} onChange={(event) => setFilters((value) => ({ ...value, locationId: event.target.value }))}>
-            <option value=""><T>{"All locations"}</T></option>
-            {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-          </Select>
+          {canChooseLocation && (
+            <Select label="Location" name="locationFilter" value={filters.locationId} onChange={(event) => setFilters((value) => ({ ...value, locationId: event.target.value }))}>
+              <option value=""><T>{"All locations"}</T></option>
+              {locations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.type}</option>)}
+            </Select>
+          )}
           <Select label="Payment method" name="paymentFilter" value={filters.paymentMethod} onChange={(event) => setFilters((value) => ({ ...value, paymentMethod: event.target.value }))}>
             <option value=""><T>{"All methods"}</T></option>
             {paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}

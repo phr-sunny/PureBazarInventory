@@ -15,10 +15,11 @@ function periodBounds(startDate, endDate) {
   return { start, endExclusive, end: new Date(endExclusive.getTime() - 1) };
 }
 
-async function getPeriodLedger(vendorId, start, endExclusive, entryTypes) {
+async function getPeriodLedger(vendorId, start, endExclusive, entryTypes, locationId) {
   return VendorLedger.find({
     vendorId,
     ...(entryTypes ? { entryType: { $in: entryTypes } } : {}),
+    ...(locationId ? { locationId } : {}),
     createdAt: { $gte: start, $lt: endExclusive },
   }).sort({ createdAt: 1, _id: 1 }).lean();
 }
@@ -27,7 +28,7 @@ function qty(value) {
   return Math.round(((Number(value) || 0) + Number.EPSILON) * 1000) / 1000;
 }
 
-async function getStockSnapshot(vendorId, start, endExclusive) {
+async function getStockSnapshot(vendorId, start, endExclusive, locationId = null) {
   const products = await Product.find({ ownerType: 'VENDOR', vendorId })
     .select('_id name barcode vendorPrice mrp unitId unitsPerPackage')
     .sort({ name: 1 })
@@ -42,6 +43,7 @@ async function getStockSnapshot(vendorId, start, endExclusive) {
     {
       $match: {
         productId: { $in: productIds },
+        ...(locationId ? { warehouseId: locationId } : {}),
         createdAt: { $lt: endExclusive },
       },
     },
@@ -120,11 +122,11 @@ function productBreakdown(stockLines, entries) {
   });
 }
 
-async function getLedger(vendorId, start, endExclusive) {
+async function getLedger(vendorId, start, endExclusive, locationId = null) {
   const [entries, stock, allEntries] = await Promise.all([
-    getPeriodLedger(vendorId, start, endExclusive, ['SALE']),
-    getStockSnapshot(vendorId, start, endExclusive),
-    getPeriodLedger(vendorId, start, endExclusive, ['SALE', 'RETURN']),
+    getPeriodLedger(vendorId, start, endExclusive, ['SALE'], locationId),
+    getStockSnapshot(vendorId, start, endExclusive, locationId),
+    getPeriodLedger(vendorId, start, endExclusive, ['SALE', 'RETURN'], locationId),
   ]);
   const totals = entries.reduce((result, entry) => ({
     sales: result.sales + entry.quantity,

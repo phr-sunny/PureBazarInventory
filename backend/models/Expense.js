@@ -13,7 +13,11 @@ const expenseSchema = new mongoose.Schema({
   expenseDate: { type: Date, required: true, default: Date.now },
   description: { type: String, required: true, trim: true },
   paymentMethod: { type: String, enum: ['Cash', 'Bank', 'bKash', 'Nagad', 'Card'], required: true },
-  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
+  locationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Location',
+    required() { return this.isNew; },
+  },
   attachment: { type: attachmentSchema, default: undefined },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

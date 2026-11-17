@@ -7,6 +7,7 @@ function createLocationScopeMiddleware({
   allLocationsOnRead = false,
   allowCentralLocationSelection = false,
   locationQueryParam = null,
+  allowLocationSelectionOnWrite = false,
 } = {}) {
   return async function locationScopeMiddleware(req, res, next) {
     try {
@@ -21,10 +22,10 @@ function createLocationScopeMiddleware({
       const isRead = req.method === 'GET';
       const assignedLocationId = locationIdOf(req.user.locationId);
       const canSelectLocation = superAdmin
-        || (canViewAllLocations && isRead)
+        || (canViewAllLocations && (isRead || allowLocationSelectionOnWrite))
         || (allowCentralLocationSelection && req.user.location?.type === 'CENTRAL');
       const selectedLocationId = locationQueryParam
-        ? req.query[locationQueryParam] || req.query.selectedOutletId || null
+        ? req.query[locationQueryParam] || req.body?.[locationQueryParam] || req.query.selectedOutletId || null
         : outletOnly
           ? req.query.selectedOutletId || null
           : req.query.selectedOutletId || req.query.warehouseId || req.body?.warehouseId || null;
@@ -108,5 +109,13 @@ enforceLocationScope.forSalesHistory = createLocationScopeMiddleware({
 enforceLocationScope.forStockRead = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
 enforceLocationScope.forStockCounts = createLocationScopeMiddleware({ allowCentralLocationSelection: true });
 enforceLocationScope.forDashboard = createLocationScopeMiddleware({ locationQueryParam: 'locationId' });
+enforceLocationScope.forAccountingRead = createLocationScopeMiddleware({
+  allLocationsOnRead: true,
+  locationQueryParam: 'locationId',
+});
+enforceLocationScope.forExpenseWrite = createLocationScopeMiddleware({
+  locationQueryParam: 'locationId',
+  allowLocationSelectionOnWrite: true,
+});
 
 module.exports = enforceLocationScope;

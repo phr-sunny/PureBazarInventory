@@ -26,9 +26,12 @@ function format(row) {
 // Income is the company margin (MRP - vendor price) minus discounts, already
 // stored on the vendor ledger as companyNet. VAT is collected tax and is
 // reported in its own column, never added to income.
-async function getRevenueLedger(startDate, endDate) {
+async function getRevenueLedger(startDate, endDate, locationId = null) {
   const { start, endExclusive } = periodBounds(startDate, endDate);
-  const entries = await VendorLedger.find({ createdAt: { $gte: start, $lt: endExclusive } }).lean();
+  const entries = await VendorLedger.find({
+    createdAt: { $gte: start, $lt: endExclusive },
+    ...(locationId ? { locationId } : {}),
+  }).lean();
   const orderIds = [...new Set(entries.map((entry) => String(entry.orderId)))];
   const productIds = [...new Set(entries.map((entry) => String(entry.productId)))];
   const [orders, products] = await Promise.all([

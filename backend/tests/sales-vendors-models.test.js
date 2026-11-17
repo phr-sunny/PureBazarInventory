@@ -96,7 +96,7 @@ describe('Sales and vendor models', () => {
 
   it('requires ledger, shareholder, wallet, audit, and discount fields', async () => {
     const cases = [
-      [new models.VendorLedger(), ['vendorId', 'orderId', 'productId', 'quantity', 'entryType', 'vendorPayable', 'companyNet']],
+      [new models.VendorLedger(), ['vendorId', 'orderId', 'locationId', 'productId', 'quantity', 'entryType', 'vendorPayable', 'companyNet']],
       [new models.Shareholder(), ['memberId', 'name', 'verified', 'active', 'walletEnabled']],
       [new models.WalletLog(), ['memberId', 'orderId', 'amount', 'type']],
       [new models.WalletAuditLog(), ['memberId', 'action', 'succeeded', 'createdBy']],

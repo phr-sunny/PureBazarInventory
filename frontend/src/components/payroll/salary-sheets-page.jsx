@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSelector } from 'react-redux';
 import { Badge, Button, Card, Input, Select, Table } from '@/components/ui';
 import { getLocations } from '@/services/stock';
+import { canSelectAccountingLocation } from '@/components/finance/accounting-location-filter';
 import {
   createSalarySheet, getEmployees, getSalarySheet, getSalarySheets,
   transitionSalarySheet, updateSalaryLine,
@@ -22,6 +23,7 @@ export default function SalarySheetsPage() {
   const canRead = can(permissions, 'payroll:read');
   const canWrite = can(permissions, 'payroll:write');
   const canReadEmployees = can(permissions, 'employees:read');
+  const canChooseLocation = canSelectAccountingLocation(user);
   const [sheets, setSheets] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -45,13 +47,25 @@ export default function SalarySheetsPage() {
     setError('');
     const requests = [getSalarySheets(token)];
     if (canReadEmployees) requests.push(getEmployees(token));
-    if (can(permissions, 'expenses:read') || can(permissions, 'stock:read')) requests.push(getLocations(token));
+    if (canWrite || can(permissions, 'expenses:read') || can(permissions, 'stock:read')) requests.push(getLocations(token));
     Promise.all(requests)
       .then((responses) => {
         if (!active) return;
         setSheets(responses[0].data.sheets);
         if (canReadEmployees) setEmployees(responses[1].data.employees);
-        if (requests.length > (canReadEmployees ? 1 : 0) + 1) setLocations(responses[responses.length - 1].data.locations);
+        if (requests.length > (canReadEmployees ? 1 : 0) + 1) {
+          const activeLocations = responses[responses.length - 1].data.locations
+            .filter((location) => location.isActive);
+          const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+          const availableLocations = canChooseLocation
+            ? activeLocations
+            : activeLocations.filter((location) => location.id === assignedLocationId);
+          setLocations(availableLocations);
+          if (!canChooseLocation) {
+            setLocationId(availableLocations.some((location) => location.id === assignedLocationId)
+              ? assignedLocationId : '');
+          }
+        }
         setSelectedId((current) => current || responses[0].data.sheets[0]?._id || '');
       })
       .catch((requestError) => active && setError(
@@ -59,7 +73,7 @@ export default function SalarySheetsPage() {
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, canReadEmployees, permissions, reload, token]);
+  }, [canChooseLocation, canRead, canReadEmployees, canWrite, permissions, reload, token, user]);
 
   useEffect(() => {
     if (!token || !selectedId || !canRead) {
@@ -224,13 +238,13 @@ export default function SalarySheetsPage() {
                 <Select label="Payment method" name="payMethod" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
                   {paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
                 </Select>
-                {locations.length > 0 && (
-                  <Select label="Expense location (optional)" name="payLocation" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
-                    <option value=""><T>{"No location"}</T></option>
+                {(
+                  <Select label="Expense location" name="payLocation" required value={locationId} disabled={!canChooseLocation && !locations.length} onChange={(event) => setLocationId(event.target.value)}>
+                    <option value=""><T>{"Select a location"}</T></option>
                     {locations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.type}</option>)}
                   </Select>
                 )}
-                <Button disabled={busy} onClick={() => runSheetAction('pay')}>Record payment</Button>
+                <Button disabled={busy || !locationId} onClick={() => runSheetAction('pay')}>Record payment</Button>
               </>}
               {sheet.status === 'Paid' && <span className="text-sm text-slate-600">Paid · {sheet.paidAt ? new Date(sheet.paidAt).toLocaleDateString('en-BD') : 'date unavailable'}</span>}
             </div>

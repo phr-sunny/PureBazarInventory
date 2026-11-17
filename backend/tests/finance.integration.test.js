@@ -21,6 +21,7 @@ const models = require('../models');
 const financeRoutes = require('../routes/financeRoutes');
 const errorMiddleware = require('../middlewares/errorMiddleware');
 const { calculateBill } = require('../services/billEngine');
+const { getRevenueLedger } = require('../services/revenueLedgerService');
 
 const secret = 'finance-api-test-secret';
 const id = (n) => new mongoose.Types.ObjectId(`65c${String(n).padStart(21, '0')}`);
@@ -74,22 +75,27 @@ describe('finance API', () => {
   app.use(errorMiddleware);
   const auth = { Authorization: `Bearer ${jwt.sign({ sub: userId.toString() }, secret)}` };
   let permissions;
+  let canViewAllLocations;
   let expense;
 
   beforeEach(() => {
     process.env.JWT_SECRET = secret;
     jest.clearAllMocks();
     permissions = ['finance:read', 'expenses:read', 'expenses:write', 'vendor-payouts:write'];
+    canViewAllLocations = false;
     models.User.findById.mockReturnValue({
-      populate: jest.fn(async () => ({ _id: userId, isActive: true, roleId: { name: 'Finance', permissions } })),
+      populate: jest.fn(async () => ({
+        _id: userId, isActive: true, locationId: loc,
+        roleId: { name: 'Finance', permissions, canViewAllLocations },
+      })),
     });
     models.AuditLog.create.mockResolvedValue({});
     models.SalarySheet.findOne.mockReturnValue(query(null));
     models.ExpenseCategory.findById.mockReturnValue(query({ _id: expCat, isActive: true }));
-    models.Location.findById.mockReturnValue(query({ _id: loc }));
+    models.Location.findById.mockReturnValue(query({ _id: loc, type: 'OUTLET', isActive: true }));
     expense = {
       _id: expenseId, categoryId: expCat, amount: 50, expenseDate: new Date('2026-09-10T00:00:00Z'),
-      description: 'Rent', paymentMethod: 'Cash', sourceType: 'MANUAL',
+      description: 'Rent', paymentMethod: 'Cash', locationId: loc, sourceType: 'MANUAL',
       toObject() { return { amount: this.amount }; },
       save: jest.fn(async () => {}),
     };
@@ -150,6 +156,52 @@ describe('finance API', () => {
       expect(res.body.totals.discounts).toBeCloseTo(bill.otherDiscountAmount, 2);
     });
 
+    it('sums revenue totals across locations to the All total', async () => {
+      const locationA = loc;
+      const locationB = id(14);
+      const first = buildOrder(id(15), items);
+      const second = buildOrder(id(16), items);
+      first.order.outlet = locationA;
+      second.order.outlet = locationB;
+      const ledgerRows = [
+        ...first.ledger.map((entry) => ({ ...entry, locationId: locationA })),
+        ...second.ledger.map((entry) => ({ ...entry, locationId: locationB })),
+      ];
+      const orders = [first.order, second.order];
+      models.VendorLedger.find.mockImplementation((filter) => query(ledgerRows.filter((entry) => (
+        !filter.locationId || String(entry.locationId) === String(filter.locationId)
+      ))));
+      models.Order.find.mockImplementation((filter) => query(orders.filter((order) => (
+        filter._id.$in.some((orderId) => String(orderId) === String(order._id))
+      ))));
+      models.Product.find.mockReturnValue(query([
+        { _id: prodA, categoryId: catA }, { _id: prodB, categoryId: catB },
+      ]));
+      models.Category.find.mockReturnValue(query([
+        { _id: catA, name: 'Snacks' }, { _id: catB, name: 'Drinks' },
+      ]));
+
+      const [all, a, b] = await Promise.all([
+        getRevenueLedger('2026-09-01', '2026-09-30'),
+        getRevenueLedger('2026-09-01', '2026-09-30', locationA),
+        getRevenueLedger('2026-09-01', '2026-09-30', locationB),
+      ]);
+      ['sales', 'discounts', 'vat', 'income', 'returnsAdjustment'].forEach((key) => {
+        expect(a.totals[key] + b.totals[key]).toBe(all.totals[key]);
+      });
+    });
+
+    it('forces a locked user revenue query to their assigned location', async () => {
+      mockSales();
+      const otherLocationId = id(12);
+      const response = await request(app)
+        .get(`/api/finance/revenue-ledger?startDate=2026-09-01&endDate=2026-09-30&locationId=${otherLocationId}`)
+        .set(auth);
+
+      expect(response.status).toBe(200);
+      expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
+    });
+
     it('requires finance:read and valid dates', async () => {
       permissions = ['expenses:read'];
       const denied = await request(app)
@@ -176,6 +228,40 @@ describe('finance API', () => {
         amount: 120.5, paymentMethod: 'Bank', createdBy: userId,
       }));
       expect(models.AuditLog.create).toHaveBeenCalled();
+    });
+
+    it('forces a locked user expense to their location and scopes expense lists', async () => {
+      const otherLocationId = id(13);
+      models.Expense.create.mockImplementation(async (data) => ({ _id: expenseId, ...data, toObject: () => data }));
+      const created = await request(app).post('/api/finance/expenses').set(auth)
+        .send({ ...payload, locationId: otherLocationId.toString() });
+      expect(created.status).toBe(201);
+      expect(models.Expense.create).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
+
+      const records = [
+        { _id: expenseId, locationId: loc, amount: 10, expenseDate: new Date(), categoryId: expCat },
+        { _id: otherLocationId, locationId: otherLocationId, amount: 500, expenseDate: new Date(), categoryId: expCat },
+      ];
+      models.Expense.find.mockImplementation((filter) => query(
+        records.filter((row) => String(row.locationId) === String(filter.locationId)),
+      ));
+      const listed = await request(app).get(`/api/finance/expenses?locationId=${otherLocationId}`).set(auth);
+      expect(listed.status).toBe(200);
+      expect(listed.body.expenses.map((row) => row._id)).toEqual([expenseId.toString()]);
+      expect(models.Expense.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
+    });
+
+    it('allows a canViewAllLocations user to record an expense at another active location', async () => {
+      canViewAllLocations = true;
+      const otherLocationId = id(17);
+      models.Expense.create.mockImplementation(async (data) => ({ _id: expenseId, ...data, toObject: () => data }));
+      const response = await request(app).post('/api/finance/expenses').set(auth)
+        .send({ ...payload, locationId: otherLocationId.toString() });
+
+      expect(response.status).toBe(201);
+      expect(models.Expense.create).toHaveBeenCalledWith(expect.objectContaining({
+        locationId: otherLocationId.toString(),
+      }));
     });
 
     it('rejects invalid expense input', async () => {

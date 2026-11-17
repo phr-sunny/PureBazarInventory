@@ -3,125 +3,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileDown, FileSpreadsheet } from 'lucide-react';
 import { useSelector } from 'react-redux';
-import { Button, Card, Input, Table } from '@/components/ui';
+import { Button, Card, Input } from '@/components/ui';
 import { downloadReport, getReport } from '@/services/reports';
-import { stockText } from '@/services/stock-units.cjs';
+import AccountingLocationFilter, {
+  accountingLocationParam, useAccountingLocations,
+} from '@/components/finance/accounting-location-filter';
+import { formatValue, reportConfig, ReportTable } from './report-config';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
 
-const reportConfig = {
-  sales: {
-    title: 'Sales Report',
-    description: 'Review paid sales by day or month.',
-    metrics: [
-      ['billCount', 'Paid bills', 'count'],
-      ['subtotal', 'Subtotal', 'money'],
-      ['discounts', 'Discounts', 'money'],
-      ['vat', 'VAT', 'money'],
-      ['totalSales', 'Total sales', 'money'],
-    ],
-    columns: [
-      ['period', 'Period'],
-      ['billCount', 'Bills', 'count'],
-      ['subtotal', 'Subtotal', 'money'],
-      ['discounts', 'Discounts', 'money'],
-      ['vat', 'VAT', 'money'],
-      ['totalSales', 'Total sales', 'money'],
-    ],
-  },
-  stock: {
-    title: 'Stock Report',
-    description: 'Track stock movement, closing quantities, turnover, and low stock.',
-    metrics: [],
-    columns: [
-      ['productName', 'Product'],
-      ['barcode', 'Barcode'],
-      ['opening', 'Opening', 'stockQuantity'],
-      ['received', 'Received', 'stockQuantity'],
-      ['sold', 'Sold net', 'stockQuantity'],
-      ['otherChange', 'Other change', 'stockQuantity'],
-      ['closing', 'Closing', 'stockQuantity'],
-      ['onHand', 'On hand', 'stockQuantity'],
-      ['turnover', 'Turnover', 'number'],
-    ],
-  },
-  vendor: {
-    title: 'Vendor Profitability',
-    description: 'Compare vendor payables and company net earnings for the selected period.',
-    metrics: [
-      ['quantitySold', 'Quantity sold', 'quantity'],
-      ['vendorPayable', 'Vendor payable', 'money'],
-      ['companyNet', 'Company net', 'money'],
-    ],
-    columns: [
-      ['vendorName', 'Vendor'],
-      ['shopName', 'Shop'],
-      ['billCount', 'Bills', 'count'],
-      ['quantitySold', 'Qty sold', 'quantity'],
-      ['vendorPayable', 'Vendor payable', 'money'],
-      ['companyNet', 'Company net', 'money'],
-      ['marginPercentOfPayable', 'Margin %', 'percent'],
-    ],
-  },
-  profitLoss: {
-    title: 'Profit and Loss',
-    description: 'Review margin, discounts, expenses, and net profit.',
-    metrics: [
-      ['marginIncome', 'Vendor margin income', 'money'],
-      ['ownStockMargin', 'Own-stock margin', 'money'],
-      ['discounts', 'Discounts', 'money'],
-      ['expenses', 'Expenses', 'money'],
-      ['netProfit', 'Net profit', 'money'],
-    ],
-    columns: [],
-  },
-  vatDiscount: {
-    title: 'VAT and Discounts',
-    description: 'Review paid bill VAT and discounts recorded in each business day.',
-    metrics: [
-      ['billCount', 'Paid bills', 'count'],
-      ['vat', 'VAT', 'money'],
-      ['itemDiscount', 'Item discounts', 'money'],
-      ['billDiscount', 'Bill discounts', 'money'],
-      ['shareholderDiscount', 'Shareholder discounts', 'money'],
-      ['totalDiscount', 'Total discounts', 'money'],
-    ],
-    columns: [
-      ['period', 'Period'],
-      ['billCount', 'Bills', 'count'],
-      ['vat', 'VAT', 'money'],
-      ['itemDiscount', 'Item discount', 'money'],
-      ['billDiscount', 'Bill discount', 'money'],
-      ['shareholderDiscount', 'Shareholder discount', 'money'],
-      ['totalDiscount', 'Total discount', 'money'],
-    ],
-  },
-};
-
-const moneyFormatter = new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT' });
-const numberFormatter = new Intl.NumberFormat('en-BD', { maximumFractionDigits: 4 });
-
-function formatValue(value, kind) {
-  if (value === null || value === undefined || value === '') return '—';
-  if (kind === 'money') return moneyFormatter.format(value);
-  if (kind === 'percent') return `${numberFormatter.format(value)}%`;
-  if (kind === 'count' || kind === 'quantity' || kind === 'number') return numberFormatter.format(value);
-  return String(value);
-}
-
-function ReportTable({ columns, rows, emptyMessage }) {
-  const tableColumns = columns.map(([key, label, kind]) => ({
-    key,
-    label,
-    render: (value, row) => kind === 'stockQuantity' ? stockText(value, row) : formatValue(value, kind),
-  }));
-  return <Table columns={tableColumns} rows={rows} rowKey="_id" pageSize={15} emptyMessage={emptyMessage} />;
-}
-
 export default function ReportScreen({ type }) {
-  const token = useSelector((state) => state.auth.token);
+  const { token, user } = useSelector((state) => state.auth);
+  const { canSelect, locations, loadingLocations, locationError } = useAccountingLocations(token, user);
   const config = reportConfig[type];
   const [filters, setFilters] = useState({ from: '', to: '', groupBy: 'day', lowStockThreshold: '10' });
+  const [selectedLocationId, setSelectedLocationId] = useState('all');
   const [appliedFilters, setAppliedFilters] = useState({});
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -168,7 +64,11 @@ export default function ReportScreen({ type }) {
 
   async function applyFilters(event) {
     event.preventDefault();
-    const params = { from: filters.from, to: filters.to };
+    const params = {
+      from: filters.from,
+      to: filters.to,
+      locationId: accountingLocationParam(user, selectedLocationId),
+    };
     if (type === 'sales') params.groupBy = filters.groupBy;
     if (type === 'stock') params.lowStockThreshold = filters.lowStockThreshold;
     await loadReport(params);
@@ -177,7 +77,8 @@ export default function ReportScreen({ type }) {
   async function clearFilters() {
     const cleared = { from: '', to: '', groupBy: 'day', lowStockThreshold: '10' };
     setFilters(cleared);
-    await loadReport({});
+    setSelectedLocationId('all');
+    await loadReport({ locationId: accountingLocationParam(user, 'all') });
   }
 
   async function exportReport(format) {
@@ -214,6 +115,13 @@ export default function ReportScreen({ type }) {
       <form onSubmit={applyFilters} className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-5">
         <Input label="From date" type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => updateFilter('from', event.target.value)} />
         <Input label="To date" type="date" min={filters.from || undefined} value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} />
+        <AccountingLocationFilter
+          canSelect={canSelect}
+          locations={locations}
+          loading={loadingLocations}
+          value={selectedLocationId}
+          onChange={setSelectedLocationId}
+        />
         {type === 'sales' && (
           <label className="ui-field" htmlFor="groupBy">
             <span className="field-label"><T>{"Group by"}</T></span>
@@ -228,6 +136,7 @@ export default function ReportScreen({ type }) {
           <Button type="button" variant="secondary" onClick={clearFilters} disabled={loading}>Clear</Button>
         </div>
       </form>
+      {locationError && <p role="alert" className="text-sm text-red-700">{locationError}</p>}
 
       {loading ? (
         <p role="status" className="py-10 text-center text-slate-500"><T>{"Loading report..."}</T></p>

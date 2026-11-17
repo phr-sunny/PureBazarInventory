@@ -16,6 +16,7 @@ jest.mock('../models', () => {
     find: jest.fn((filter = {}) => list(global.__db[name].filter((doc) => Object.entries(filter)
       .every(([key, value]) => doc[key] === value)))),
   });
+
   return {
     User: { findById: jest.fn() },
     Order: collection('Order'),
@@ -26,6 +27,7 @@ jest.mock('../models', () => {
     Expense: collection('Expense'),
     ExpenseCategory: collection('ExpenseCategory'),
     DiscountLog: collection('DiscountLog'),
+    Location: { findById: jest.fn() },
   };
 });
 
@@ -42,7 +44,8 @@ const at = (iso) => new Date(iso);
 const sum = (items, pick) => items.reduce((total, item) => total + Math.round(pick(item) * 100), 0) / 100;
 
 const pV = id(); const pC = id(); const v1 = id(); const v2 = id(); const cat = id();
-const o1 = id(); const o2 = id(); const o3 = id(); const o4 = id();
+const o1 = id(); const o2 = id(); const o3 = id(); const o4 = id(); const o5 = id();
+const outletA = id(); const outletB = id();
 
 function seed() {
   global.__db = {
@@ -53,7 +56,7 @@ function seed() {
     Vendor: [{ _id: v1, name: 'Karim', shopName: 'K Store', memberId: 'V1' }, { _id: v2, name: 'Rahim', shopName: 'R Store', memberId: 'V2' }],
     Order: [
       {
-        _id: o1, paymentStatus: 'PAID', soldAt: at('2026-03-10T10:00:00+06:00'), subtotal: 250, otherDiscountAmount: 15,
+        _id: o1, outlet: outletA, paymentStatus: 'PAID', soldAt: at('2026-03-10T10:00:00+06:00'), subtotal: 250, otherDiscountAmount: 15,
         shareholderDiscountAmount: 0, vatAmount: 7.5, grandTotal: 242.5,
         lines: [
           { productId: pV, quantity: 2, subtotal: 200, itemDiscountAmount: 10, billDiscountAmount: 0 },
@@ -61,42 +64,42 @@ function seed() {
         ],
       },
       {
-        _id: o2, paymentStatus: 'PAID', soldAt: at('2026-03-11T00:30:00+06:00'), subtotal: 100, otherDiscountAmount: 0,
+        _id: o2, outlet: outletA, paymentStatus: 'PAID', soldAt: at('2026-03-11T00:30:00+06:00'), subtotal: 100, otherDiscountAmount: 0,
         shareholderDiscountAmount: 5, vatAmount: 0.1, grandTotal: 95.1,
         lines: [{ productId: pV, quantity: 1, subtotal: 100, itemDiscountAmount: 0, billDiscountAmount: 0, shareholderDiscountAmount: 5 }],
       },
       {
-        _id: o3, paymentStatus: 'REFUNDED', soldAt: at('2026-03-11T12:00:00+06:00'), subtotal: 100, otherDiscountAmount: 0,
+        _id: o3, outlet: outletA, paymentStatus: 'REFUNDED', soldAt: at('2026-03-11T12:00:00+06:00'), subtotal: 100, otherDiscountAmount: 0,
         shareholderDiscountAmount: 0, vatAmount: 3, grandTotal: 103,
         lines: [{ productId: pV, quantity: 1, subtotal: 100, itemDiscountAmount: 0, billDiscountAmount: 0 }],
       },
       {
-        _id: o4, paymentStatus: 'PAID', soldAt: at('2026-04-02T12:00:00+06:00'), subtotal: 50, otherDiscountAmount: 0,
+        _id: o4, outlet: outletA, paymentStatus: 'PAID', soldAt: at('2026-04-02T12:00:00+06:00'), subtotal: 50, otherDiscountAmount: 0,
         shareholderDiscountAmount: 0, vatAmount: 0, grandTotal: 50,
         lines: [{ productId: pC, quantity: 1, subtotal: 50, itemDiscountAmount: 0, billDiscountAmount: 0 }],
       },
     ],
     VendorLedger: [
-      { vendorId: v1, orderId: o1, productId: pV, quantity: 2, entryType: 'SALE', vendorPayable: 150, companyNet: 40, createdAt: at('2026-03-10T10:00:00+06:00') },
-      { vendorId: v2, orderId: o2, productId: pV, quantity: 1, entryType: 'SALE', vendorPayable: 75, companyNet: 20, createdAt: at('2026-03-11T00:30:00+06:00') },
-      { vendorId: v1, orderId: o3, productId: pV, quantity: 1, entryType: 'SALE', vendorPayable: 75, companyNet: 25, createdAt: at('2026-03-11T12:00:00+06:00') },
-      { vendorId: v1, orderId: o3, productId: pV, quantity: 1, entryType: 'RETURN', vendorPayable: 75, companyNet: -25, createdAt: at('2026-03-11T13:00:00+06:00') },
+      { vendorId: v1, orderId: o1, productId: pV, locationId: outletA, quantity: 2, entryType: 'SALE', vendorPayable: 150, companyNet: 40, createdAt: at('2026-03-10T10:00:00+06:00') },
+      { vendorId: v2, orderId: o2, productId: pV, locationId: outletA, quantity: 1, entryType: 'SALE', vendorPayable: 75, companyNet: 20, createdAt: at('2026-03-11T00:30:00+06:00') },
+      { vendorId: v1, orderId: o3, productId: pV, locationId: outletA, quantity: 1, entryType: 'SALE', vendorPayable: 75, companyNet: 25, createdAt: at('2026-03-11T12:00:00+06:00') },
+      { vendorId: v1, orderId: o3, productId: pV, locationId: outletA, quantity: 1, entryType: 'RETURN', vendorPayable: 75, companyNet: -25, createdAt: at('2026-03-11T13:00:00+06:00') },
     ],
     ExpenseCategory: [{ _id: cat, name: 'Rent' }],
     Expense: [
-      { categoryId: cat, amount: 12.34, expenseDate: at('2026-03-10T09:00:00+06:00') },
-      { categoryId: cat, amount: 500, expenseDate: at('2026-02-28T09:00:00+06:00') },
+      { categoryId: cat, locationId: outletA, amount: 12.34, expenseDate: at('2026-03-10T09:00:00+06:00') },
+      { categoryId: cat, locationId: outletA, amount: 500, expenseDate: at('2026-02-28T09:00:00+06:00') },
     ],
     DiscountLog: [
       { orderId: o1, scope: 'ITEM' }, { orderId: o1, scope: 'BILL' }, { orderId: o3, scope: 'BILL' },
     ],
     StockMovement: [
-      { productId: pV, type: 'GRN', quantity: 20, createdAt: at('2026-03-01T10:00:00+06:00') },
-      { productId: pV, type: 'SALE', quantity: -2, createdAt: at('2026-03-10T10:00:00+06:00') },
-      { productId: pV, type: 'SALE', quantity: -1, createdAt: at('2026-03-11T00:30:00+06:00') },
-      { productId: pV, type: 'RETURN', quantity: 1, createdAt: at('2026-03-11T13:00:00+06:00') },
-      { productId: pC, type: 'GRN', quantity: 8, createdAt: at('2026-03-01T10:00:00+06:00') },
-      { productId: pC, type: 'SALE', quantity: -1, createdAt: at('2026-03-10T10:00:00+06:00') },
+      { productId: pV, warehouseId: outletA, type: 'GRN', quantity: 20, createdAt: at('2026-03-01T10:00:00+06:00') },
+      { productId: pV, warehouseId: outletA, type: 'SALE', quantity: -2, createdAt: at('2026-03-10T10:00:00+06:00') },
+      { productId: pV, warehouseId: outletA, type: 'SALE', quantity: -1, createdAt: at('2026-03-11T00:30:00+06:00') },
+      { productId: pV, warehouseId: outletA, type: 'RETURN', quantity: 1, createdAt: at('2026-03-11T13:00:00+06:00') },
+      { productId: pC, warehouseId: outletA, type: 'GRN', quantity: 8, createdAt: at('2026-03-01T10:00:00+06:00') },
+      { productId: pC, warehouseId: outletA, type: 'SALE', quantity: -1, createdAt: at('2026-03-10T10:00:00+06:00') },
     ],
   };
 }
@@ -169,6 +172,65 @@ describe('reports API', () => {
     expect(report.rows.map((r) => r.period)).toEqual(['2026-03-10', '2026-03-11']);
   });
 
+  it('location totals add up to All for sales, vendor, profit, VAT and stock reports', async () => {
+    global.__db.Order.push({
+      _id: o5, outlet: outletB, paymentStatus: 'PAID', soldAt: at('2026-03-12T10:00:00+06:00'),
+      subtotal: 100, otherDiscountAmount: 0, shareholderDiscountAmount: 0, vatAmount: 5, grandTotal: 105,
+      lines: [{ productId: pV, quantity: 1, subtotal: 100, itemDiscountAmount: 0, billDiscountAmount: 0, shareholderDiscountAmount: 0, vatAmount: 5 }],
+    });
+    global.__db.VendorLedger.push({
+      vendorId: v2, orderId: o5, productId: pV, locationId: outletB, quantity: 1,
+      entryType: 'SALE', vendorPayable: 50, companyNet: 50, createdAt: at('2026-03-12T10:00:00+06:00'),
+    });
+    global.__db.Expense.push({
+      categoryId: cat, locationId: outletB, amount: 5, expenseDate: at('2026-03-12T10:00:00+06:00'),
+    });
+    global.__db.StockMovement.push({
+      productId: pV, warehouseId: outletB, type: 'GRN', quantity: 3, createdAt: at('2026-03-01T10:00:00+06:00'),
+    });
+
+    const period = { from: '2026-03-01', to: '2026-03-31' };
+    const [salesAll, salesA, salesB] = await Promise.all([
+      salesReport(period), salesReport({ ...period, locationId: outletA }), salesReport({ ...period, locationId: outletB }),
+    ]);
+    ['billCount', 'subtotal', 'discounts', 'vat', 'totalSales'].forEach((key) => {
+      expect(salesA.totals[key] + salesB.totals[key]).toBe(salesAll.totals[key]);
+    });
+
+    const [vendorAll, vendorA, vendorB] = await Promise.all([
+      vendorProfitability(period),
+      vendorProfitability({ ...period, locationId: outletA }),
+      vendorProfitability({ ...period, locationId: outletB }),
+    ]);
+    ['quantitySold', 'vendorPayable', 'companyNet'].forEach((key) => {
+      expect(vendorA.totals[key] + vendorB.totals[key]).toBe(vendorAll.totals[key]);
+    });
+
+    const [profitAll, profitA, profitB] = await Promise.all([
+      profitLoss(period), profitLoss({ ...period, locationId: outletA }), profitLoss({ ...period, locationId: outletB }),
+    ]);
+    ['marginIncome', 'ownStockMargin', 'discounts', 'expenses', 'netProfit'].forEach((key) => {
+      expect(profitA[key] + profitB[key]).toBe(profitAll[key]);
+    });
+
+    const [vatAll, vatA, vatB] = await Promise.all([
+      vatDiscountReport(period),
+      vatDiscountReport({ ...period, locationId: outletA }),
+      vatDiscountReport({ ...period, locationId: outletB }),
+    ]);
+    ['billCount', 'vat', 'itemDiscount', 'billDiscount', 'shareholderDiscount', 'totalDiscount'].forEach((key) => {
+      expect(vatA.totals[key] + vatB.totals[key]).toBe(vatAll.totals[key]);
+    });
+
+    const [stockAll, stockA, stockB] = await Promise.all([
+      stockReport(period), stockReport({ ...period, locationId: outletA }), stockReport({ ...period, locationId: outletB }),
+    ]);
+    ['opening', 'received', 'sold', 'otherChange', 'closing', 'onHand'].forEach((key) => {
+      const total = (report) => report.rows.reduce((sum, row) => sum + row[key], 0);
+      expect(total(stockA) + total(stockB)).toBe(total(stockAll));
+    });
+  });
+
   describe('routes', () => {
     const app = express();
     app.use('/api/reports', reportRoutes);
@@ -186,9 +248,17 @@ describe('reports API', () => {
       permissions = ['reports:read'];
       models.User.findById.mockImplementation(() => ({
         populate: jest.fn(async () => ({
-          _id: userId, isActive: true, roleId: { _id: userId, name: 'Role', permissions },
+          _id: userId, isActive: true,
+          roleId: { _id: userId, name: 'Role', permissions, canViewAllLocations: true },
         })),
       }));
+      models.Location.findById.mockImplementation((locationId) => {
+        const locationQuery = {
+          select: jest.fn(() => locationQuery),
+          lean: jest.fn(async () => ({ _id: locationId, type: 'OUTLET', isActive: true })),
+        };
+        return locationQuery;
+      });
     });
 
     it('enforces permissions and validates input', async () => {
@@ -202,6 +272,16 @@ describe('reports API', () => {
       expect((await request(app).get('/api/reports/sales?from=bad').set(auth())).status).toBe(400);
       expect((await request(app).get('/api/reports/sales?from=2026-03-05&to=2026-03-01').set(auth())).status).toBe(400);
       expect((await request(app).get('/api/reports/sales?groupBy=year').set(auth())).status).toBe(400);
+    });
+
+    it('applies a selected active location to the report totals', async () => {
+      const response = await request(app)
+        .get(`/api/reports/sales?locationId=${outletB}`)
+        .set(auth());
+
+      expect(response.status).toBe(200);
+      expect(response.body.report.totals.billCount).toBe(0);
+      expect(models.Location.findById).toHaveBeenCalledWith(outletB.toString());
     });
 
     it('serves json, Excel and PDF with matching totals', async () => {

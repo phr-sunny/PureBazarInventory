@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('express-validator');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
 const { salesReport, stockReport } = require('../services/salesStockReportService');
 const { vendorProfitability, profitLoss, vatDiscountReport } = require('../services/financeReportService');
@@ -9,10 +10,12 @@ const { toExcel, toPdf } = require('../services/reportExportService');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(enforceLocationScope.forAccountingRead);
 
 const dateRange = [
   query('from').optional().isISO8601({ strict: true }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('from must be YYYY-MM-DD'),
   query('to').optional().isISO8601({ strict: true }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('to must be YYYY-MM-DD'),
+  query('locationId').optional().isMongoId().withMessage('A valid location is required'),
   query('to').custom((to, { req }) => !req.query.from || !to || to >= req.query.from).withMessage('to must not be before from'),
 ];
 const wrap = (handler) => async (req, res, next) => {
@@ -47,7 +50,7 @@ router.get('/sales', salesAccess, dateRange, [
   query('groupBy').optional().isIn(['day', 'month']).withMessage('groupBy must be day or month'),
   ...exportFormats,
 ], validateRequest, wrap(async (req, res) => {
-  const report = await salesReport(req.query);
+  const report = await salesReport({ ...req.query, locationId: req.locationId });
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });
   return sendReportExport(res, format, 'sales-report', {
@@ -70,7 +73,7 @@ router.get('/stock', stockAccess, dateRange, [
   query('lowStockThreshold').optional().isFloat({ min: 0 }).withMessage('Threshold must be 0 or more').toFloat(),
   ...exportFormats,
 ], validateRequest, wrap(async (req, res) => {
-  const report = await stockReport(req.query);
+  const report = await stockReport({ ...req.query, locationId: req.locationId });
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });
   return sendReportExport(res, format, 'stock-report', {
@@ -94,7 +97,7 @@ router.get('/stock', stockAccess, dateRange, [
 router.get('/vendor-profitability', vendorProfitAccess, dateRange, [
   ...exportFormats,
 ], validateRequest, wrap(async (req, res) => {
-  const report = await vendorProfitability(req.query);
+  const report = await vendorProfitability({ ...req.query, locationId: req.locationId });
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });
   return sendReportExport(res, format, 'vendor-profitability', {
@@ -114,7 +117,7 @@ router.get('/vendor-profitability', vendorProfitAccess, dateRange, [
 }));
 
 router.get('/profit-loss', profitLossAccess, dateRange, exportFormats, validateRequest, wrap(async (req, res) => {
-  const report = await profitLoss(req.query);
+  const report = await profitLoss({ ...req.query, locationId: req.locationId });
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });
   const rows = [
@@ -134,7 +137,7 @@ router.get('/profit-loss', profitLossAccess, dateRange, exportFormats, validateR
 }));
 
 router.get('/vat-discount', vatDiscountAccess, dateRange, exportFormats, validateRequest, wrap(async (req, res) => {
-  const report = await vatDiscountReport(req.query);
+  const report = await vatDiscountReport({ ...req.query, locationId: req.locationId });
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });
   return sendReportExport(res, format, 'vat-discount-report', {

@@ -27,6 +27,7 @@ const errorMiddleware = require('../middlewares/errorMiddleware');
 
 const secret = 'payroll-api-test-secret';
 const userId = new mongoose.Types.ObjectId('65d000000000000000000001');
+const locationId = new mongoose.Types.ObjectId('65d000000000000000000002');
 const stores = models.__stores;
 
 describe('payroll API', () => {
@@ -57,7 +58,8 @@ describe('payroll API', () => {
     permissions = ['employees:read', 'employees:write', 'payroll:read', 'payroll:write'];
     models.User.findById.mockImplementation(() => {
       const user = {
-        _id: userId, isActive: true, roleId: { _id: userId, name: 'Accountant', permissions },
+        _id: userId, isActive: true, locationId,
+        roleId: { _id: userId, name: 'Accountant', permissions },
       };
       return { populate: jest.fn(async () => user) };
     });

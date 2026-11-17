@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useSelector } from 'react-redux';
 import { FileText, Printer, RefreshCw } from 'lucide-react';
 import { Badge, Button, Card, Input, Select } from '@/components/ui';
+import AccountingLocationFilter, {
+  accountingLocationParam, useAccountingLocations,
+} from '@/components/finance/accounting-location-filter';
 import {
   createVendorStatement,
   getVendorLedger,
@@ -39,6 +42,7 @@ const badgeTone = (status) => ({ Draft: 'warning', Approved: 'info', Paid: 'succ
 
 export default function VendorLedgerPage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
+  const { canSelect, locations, loadingLocations, locationError } = useAccountingLocations(token, user);
   const permissions = user?.permissions || [];
   const canRead = can(permissions, 'vendors:read');
   const canWrite = can(permissions, 'vendors:write');
@@ -46,6 +50,7 @@ export default function VendorLedgerPage() {
   const [vendors, setVendors] = useState([]);
   const [vendorId, setVendorId] = useState('');
   const [month, setMonth] = useState(currentMonth);
+  const [selectedLocationId, setSelectedLocationId] = useState('all');
   const [startDate, setStartDate] = useState(monthStart(currentMonth));
   const [endDate, setEndDate] = useState(monthEnd(currentMonth));
   const [ledger, setLedger] = useState(null);
@@ -94,7 +99,11 @@ export default function VendorLedgerPage() {
     setLoadingData(true);
     setError('');
     Promise.all([
-      getVendorLedger(token, vendorId, { startDate, endDate }),
+      getVendorLedger(token, vendorId, {
+        startDate,
+        endDate,
+        locationId: accountingLocationParam(user, selectedLocationId),
+      }),
       getVendorStatements(token, vendorId),
     ])
       .then(([ledgerResponse, statementResponse]) => {
@@ -107,7 +116,7 @@ export default function VendorLedgerPage() {
       ))
       .finally(() => active && setLoadingData(false));
     return () => { active = false; };
-  }, [endDate, reload, startDate, token, vendorId]);
+  }, [endDate, reload, selectedLocationId, startDate, token, user, vendorId]);
 
   function chooseMonth(value) {
     setMonth(value);
@@ -182,15 +191,23 @@ export default function VendorLedgerPage() {
       </div>
 
       <Card title="Ledger period" description="Choose a vendor and date range to review posted sales earnings.">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Select label="Vendor" name="vendor" value={vendorId} onChange={(event) => setVendorId(event.target.value)} disabled={loadingVendors}>
             <option value=""><T>{"Select a vendor"}</T></option>
             {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name} · {vendor.shopName}</option>)}
           </Select>
+          <AccountingLocationFilter
+            canSelect={canSelect}
+            locations={locations}
+            loading={loadingLocations}
+            value={selectedLocationId}
+            onChange={setSelectedLocationId}
+          />
           <Input label="Statement month" name="month" type="month" value={month} onChange={(event) => chooseMonth(event.target.value)} />
           <Input label="From" name="startDate" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
           <Input label="Through" name="endDate" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
         </div>
+        {locationError && <p role="alert" className="mt-3 text-sm text-red-700">{locationError}</p>}
       </Card>
 
       {selectedVendor && (

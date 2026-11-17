@@ -29,6 +29,7 @@ const userId = new mongoose.Types.ObjectId('65b000000000000000000001');
 const vendorId = new mongoose.Types.ObjectId('65b000000000000000000002');
 const productId = new mongoose.Types.ObjectId('65b000000000000000000003');
 const statementId = new mongoose.Types.ObjectId('65b000000000000000000004');
+const locationId = new mongoose.Types.ObjectId('65b000000000000000000005');
 const startDate = '2026-08-01';
 const endDate = '2026-08-15';
 let statementStore;
@@ -37,16 +38,19 @@ let settings;
 const entries = [
   {
     _id: new mongoose.Types.ObjectId(), vendorId, productId, orderId: new mongoose.Types.ObjectId(),
+    locationId,
     entryType: 'SALE', quantity: 2, vendorPayable: 120, companyNet: 80,
     createdAt: new Date('2026-08-02T12:00:00.000Z'),
   },
   {
     _id: new mongoose.Types.ObjectId(), vendorId, productId, orderId: new mongoose.Types.ObjectId(),
+    locationId,
     entryType: 'SALE', quantity: 1, vendorPayable: 50, companyNet: 25,
     createdAt: new Date('2026-08-05T12:00:00.000Z'),
   },
   {
     _id: new mongoose.Types.ObjectId(), vendorId, productId, orderId: new mongoose.Types.ObjectId(),
+    locationId,
     entryType: 'RETURN', quantity: 1, vendorPayable: 50, companyNet: -25,
     createdAt: new Date('2026-08-07T12:00:00.000Z'),
   },
@@ -102,6 +106,7 @@ describe('vendor settlement APIs', () => {
       populate: jest.fn().mockResolvedValue({
         _id: userId,
         isActive: true,
+        locationId,
         roleId: { name: 'Finance', permissions },
       }),
     });
@@ -116,6 +121,7 @@ describe('vendor settlement APIs', () => {
     models.VendorLedger.find.mockImplementation((filter) => {
       const periodEntries = entries.filter((entry) => (
         entry.createdAt >= filter.createdAt.$gte && entry.createdAt < filter.createdAt.$lt
+        && (!filter.locationId || String(entry.locationId) === String(filter.locationId))
       ));
       const matching = filter.entryType
         ? periodEntries.filter((entry) => filter.entryType.$in.includes(entry.entryType))
@@ -155,6 +161,30 @@ describe('vendor settlement APIs', () => {
       vendorPayable: 170,
       companyMargin: 105,
     });
+  });
+
+  it('does not expose another location ledger even if a locked user requests it', async () => {
+    const otherLocationId = new mongoose.Types.ObjectId();
+    const otherEntry = {
+      ...entries[0],
+      _id: new mongoose.Types.ObjectId(),
+      locationId: otherLocationId,
+    };
+    entries.push(otherEntry);
+    try {
+      const response = await request(app)
+        .get(`/api/vendors/${vendorId}/ledger?startDate=${startDate}&endDate=${endDate}&locationId=${otherLocationId}`)
+        .set(auth);
+
+      expect(response.status).toBe(200);
+      expect(response.body.entries).toHaveLength(2);
+      expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.objectContaining({ locationId }));
+      expect(models.StockMovement.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.objectContaining({ $match: expect.objectContaining({ warehouseId: locationId }) }),
+      ]));
+    } finally {
+      entries.pop();
+    }
   });
 
   it('snapshots period totals from ledger and does not recalculate after product price changes', async () => {

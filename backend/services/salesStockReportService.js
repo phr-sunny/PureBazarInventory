@@ -5,10 +5,11 @@ const {
 
 const DEFAULT_LOW_STOCK_THRESHOLD = 10;
 
-async function salesReport({ from, to, groupBy = 'day' } = {}) {
+async function salesReport({ from, to, groupBy = 'day', locationId } = {}) {
   const bounds = periodBounds({ from, to });
   const orders = (await Order.find({ paymentStatus: 'PAID' }).lean())
-    .filter((order) => inPeriod(soldAt(order), bounds));
+    .filter((order) => inPeriod(soldAt(order), bounds)
+      && (!locationId || String(order.outlet) === String(locationId)));
   const buckets = new Map();
   orders.forEach((order) => {
     const key = bucketKey(soldAt(order), groupBy);
@@ -26,10 +27,12 @@ async function salesReport({ from, to, groupBy = 'day' } = {}) {
   return { groupBy, from: from || null, to: to || null, rows, totals: summarize(orders) };
 }
 
-async function stockReport({ from, to, lowStockThreshold = DEFAULT_LOW_STOCK_THRESHOLD } = {}) {
+async function stockReport({
+  from, to, lowStockThreshold = DEFAULT_LOW_STOCK_THRESHOLD, locationId,
+} = {}) {
   const bounds = periodBounds({ from, to });
   const [movements, products] = await Promise.all([
-    StockMovement.find({}).lean(),
+    StockMovement.find(locationId ? { warehouseId: locationId } : {}).lean(),
     Product.find({}).select('name barcode unitsPerPackage unitId').populate('unitId', 'name').lean(),
   ]);
   const stats = new Map(products.map((product) => [String(product._id), {

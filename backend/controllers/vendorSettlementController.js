@@ -48,7 +48,7 @@ async function listLedger(req, res, next) {
   try {
     await requireVendor(req.params.vendorId);
     const { start, endExclusive } = parsePeriod(req);
-    const ledger = await getLedger(req.params.vendorId, start, endExclusive);
+    const ledger = await getLedger(req.params.vendorId, start, endExclusive, req.locationId);
     return res.json({ success: true, ...ledger });
   } catch (error) {
     return next(error);

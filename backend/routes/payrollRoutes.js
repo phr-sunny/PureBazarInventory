@@ -4,6 +4,7 @@ const payrollController = require('../controllers/payrollController');
 const salarySheetController = require('../controllers/salarySheetController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
+const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
 
 const router = express.Router();
@@ -62,7 +63,7 @@ router.patch('/sheets/:id/lines/:employeeId', can('payroll:write'), [
   money(body('otherDeductions').optional()),
 ], validateRequest, salarySheetController.updateLine);
 router.post('/sheets/:id/approve', can('payroll:write'), [mongoId('id')], validateRequest, salarySheetController.approveSheet);
-router.post('/sheets/:id/pay', can('payroll:write'), [
+router.post('/sheets/:id/pay', ...can('payroll:write'), enforceLocationScope.forExpenseWrite, [
   mongoId('id'),
   body('paymentMethod').isIn(methods).withMessage('Invalid payment method'),
   body('locationId').optional().isMongoId(),

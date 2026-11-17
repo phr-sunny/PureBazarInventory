@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const vendorLedgerSchema = new mongoose.Schema({
   vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
-  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
+  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', required: true },
   returnId: { type: mongoose.Schema.Types.ObjectId, ref: 'Return' },
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
   quantity: { type: Number, required: true, min: 0.000001 },

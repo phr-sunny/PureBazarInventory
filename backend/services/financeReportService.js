@@ -5,14 +5,15 @@ const {
   cents, money, sumCents, milli, qty, periodBounds, inPeriod, bucketKey, soldAt, byKey,
 } = require('./reportUtils');
 
-const paidOrders = async (bounds) => (await Order.find({ paymentStatus: 'PAID' }).lean())
-  .filter((order) => inPeriod(soldAt(order), bounds));
+const paidOrders = async (bounds, locationId) => (await Order.find({ paymentStatus: 'PAID' }).lean())
+  .filter((order) => inPeriod(soldAt(order), bounds)
+    && (!locationId || String(order.outlet) === String(locationId)));
 const orderDiscount = (order) => cents(order.otherDiscountAmount) + cents(order.shareholderDiscountAmount);
 
-async function vendorProfitability({ from, to } = {}) {
+async function vendorProfitability({ from, to, locationId } = {}) {
   const bounds = periodBounds({ from, to });
   const [entries, vendors] = await Promise.all([
-    VendorLedger.find({}).lean(),
+    VendorLedger.find(locationId ? { locationId } : {}).lean(),
     Vendor.find({}).select('name shopName memberId').lean(),
   ]);
   const names = new Map(vendors.map((vendor) => [String(vendor._id), vendor]));
@@ -50,13 +51,13 @@ async function vendorProfitability({ from, to } = {}) {
   return { from: from || null, to: to || null, rows, totals };
 }
 
-async function profitLoss({ from, to } = {}) {
+async function profitLoss({ from, to, locationId } = {}) {
   const bounds = periodBounds({ from, to });
   const [orders, ledger, products, expenses, categories] = await Promise.all([
-    paidOrders(bounds),
-    VendorLedger.find({}).lean(),
+    paidOrders(bounds, locationId),
+    VendorLedger.find(locationId ? { locationId } : {}).lean(),
     Product.find({}).select('vendorPrice').lean(),
-    Expense.find({}).lean(),
+    Expense.find(locationId ? { locationId } : {}).lean(),
     ExpenseCategory.find({}).lean(),
   ]);
   const cost = new Map(products.map((product) => [String(product._id), cents(product.vendorPrice)]));
@@ -102,9 +103,9 @@ async function profitLoss({ from, to } = {}) {
   };
 }
 
-async function vatDiscountReport({ from, to } = {}) {
+async function vatDiscountReport({ from, to, locationId } = {}) {
   const bounds = periodBounds({ from, to });
-  const [orders, logs] = await Promise.all([paidOrders(bounds), DiscountLog.find({}).lean()]);
+  const [orders, logs] = await Promise.all([paidOrders(bounds, locationId), DiscountLog.find({}).lean()]);
   const days = new Map();
   orders.forEach((order) => {
     const key = bucketKey(soldAt(order), 'day');
