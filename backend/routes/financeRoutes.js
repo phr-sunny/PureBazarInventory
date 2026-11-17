@@ -34,7 +34,7 @@ const expenseFields = (optional) => {
 
 router.get('/revenue-ledger', ...can('finance:read'), enforceLocationScope.forAccountingRead, [
   dateQuery('startDate'), dateQuery('endDate'),
-  query('locationId').optional().isMongoId().withMessage('A valid location is required'),
+  query('locationId').optional({ values: 'falsy' }).isMongoId().withMessage('A valid location is required'),
 ], validateRequest, financeController.revenueLedger);
 
 router.get('/expense-categories', can('expenses:read'), financeController.listExpenseCategories);
@@ -46,7 +46,7 @@ router.post('/expense-categories', can('expenses:write'), [
 router.get('/expenses', ...can('expenses:read'), enforceLocationScope.forAccountingRead, [
   dateQuery('startDate', true), dateQuery('endDate', true),
   query('categoryId').optional().isMongoId(),
-  query('locationId').optional().isMongoId(),
+  query('locationId').optional({ values: 'falsy' }).isMongoId(),
   query('paymentMethod').optional().isIn(methods),
 ], validateRequest, financeController.listExpenses);
 router.post('/expenses', ...can('expenses:write'), expenseAttachmentUpload, enforceLocationScope.forExpenseWrite,

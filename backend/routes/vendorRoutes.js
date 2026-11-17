@@ -42,7 +42,7 @@ router.get('/', read, [
 
 router.get('/:vendorId/ledger', read, enforceLocationScope.forAccountingRead, [
   param('vendorId').isMongoId().withMessage('A valid vendor ID is required'),
-  query('locationId').optional().isMongoId().withMessage('A valid location is required'),
+  query('locationId').optional({ values: 'falsy' }).isMongoId().withMessage('A valid location is required'),
   query('startDate').isISO8601({ strict: true, strictSeparator: true })
     .custom(isDateOnly)
     .withMessage('startDate must be a valid YYYY-MM-DD date'),

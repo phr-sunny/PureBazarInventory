@@ -202,6 +202,30 @@ describe('finance API', () => {
       expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
     });
 
+    it.each(['', '&locationId='])('treats a missing or empty location as all for a location-wide user (%s)', async (locationQuery) => {
+      canViewAllLocations = true;
+      mockSales();
+
+      const response = await request(app)
+        .get(`/api/finance/revenue-ledger?startDate=2026-09-01&endDate=2026-09-30${locationQuery}`)
+        .set(auth);
+
+      expect(response.status).toBe(200);
+      expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.not.objectContaining({
+        locationId: expect.anything(),
+      }));
+    });
+
+    it.each(['', '&locationId='])('uses the assigned location for a locked user with a missing or empty filter (%s)', async (locationQuery) => {
+      mockSales();
+      const response = await request(app)
+        .get(`/api/finance/revenue-ledger?startDate=2026-09-01&endDate=2026-09-30${locationQuery}`)
+        .set(auth);
+
+      expect(response.status).toBe(200);
+      expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
+    });
+
     it('requires finance:read and valid dates', async () => {
       permissions = ['expenses:read'];
       const denied = await request(app)
@@ -248,6 +272,27 @@ describe('finance API', () => {
       const listed = await request(app).get(`/api/finance/expenses?locationId=${otherLocationId}`).set(auth);
       expect(listed.status).toBe(200);
       expect(listed.body.expenses.map((row) => row._id)).toEqual([expenseId.toString()]);
+      expect(models.Expense.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
+    });
+
+    it.each(['', '?locationId='])('treats a missing or empty expense location as all for a location-wide user (%s)', async (locationQuery) => {
+      canViewAllLocations = true;
+      models.Expense.find.mockReturnValue(query([]));
+      const url = `/api/finance/expenses${locationQuery}`;
+
+      const response = await request(app).get(url).set(auth);
+
+      expect(response.status).toBe(200);
+      expect(models.Expense.find).toHaveBeenCalledWith(expect.not.objectContaining({
+        locationId: expect.anything(),
+      }));
+    });
+
+    it.each(['', '?locationId='])('uses the assigned location for a locked expense list with a missing or empty filter (%s)', async (locationQuery) => {
+      models.Expense.find.mockReturnValue(query([]));
+      const response = await request(app).get(`/api/finance/expenses${locationQuery}`).set(auth);
+
+      expect(response.status).toBe(200);
       expect(models.Expense.find).toHaveBeenCalledWith(expect.objectContaining({ locationId: loc }));
     });
 

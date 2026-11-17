@@ -34,6 +34,7 @@ const startDate = '2026-08-01';
 const endDate = '2026-08-15';
 let statementStore;
 let permissions;
+let user;
 let settings;
 const entries = [
   {
@@ -99,16 +100,17 @@ describe('vendor settlement APIs', () => {
     jest.clearAllMocks();
     statementStore = [];
     permissions = ['vendors:read', 'vendors:write', 'vendor-payouts:read', 'vendor-payouts:write'];
+    user = {
+      _id: userId,
+      isActive: true,
+      locationId,
+      roleId: { name: 'Finance', permissions, canViewAllLocations: false },
+    };
     settings = { vendorWalletPayoutEnabled: false, enabledVendorPayoutMethods: ['Cash', 'Bank', 'bKash', 'Nagad'] };
     models.Settings.findOne.mockReturnValue(query(settings));
     models.GoodsReceive.updateMany.mockResolvedValue({});
     models.User.findById.mockReturnValue({
-      populate: jest.fn().mockResolvedValue({
-        _id: userId,
-        isActive: true,
-        locationId,
-        roleId: { name: 'Finance', permissions },
-      }),
+      populate: jest.fn().mockImplementation(async () => user),
     });
     models.Vendor.findById.mockReturnValue(query({ _id: vendorId }));
     models.Product.find.mockReturnValue(query([{ _id: productId, vendorPrice: 50 }]));
@@ -161,6 +163,40 @@ describe('vendor settlement APIs', () => {
       vendorPayable: 170,
       companyMargin: 105,
     });
+  });
+
+  it.each(['', '&locationId='])('treats a missing or empty location as all for a location-wide vendor ledger user (%s)', async (locationQuery) => {
+    user.roleId.canViewAllLocations = true;
+    const response = await request(app)
+      .get(`/api/vendors/${vendorId}/ledger?startDate=${startDate}&endDate=${endDate}${locationQuery}`)
+      .set(auth);
+
+    expect(response.status).toBe(200);
+    expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.not.objectContaining({
+      locationId: expect.anything(),
+    }));
+  });
+
+  it.each(['', '&locationId='])('uses the assigned location for a locked ledger user with a missing or empty filter (%s)', async (locationQuery) => {
+    const response = await request(app)
+      .get(`/api/vendors/${vendorId}/ledger?startDate=${startDate}&endDate=${endDate}${locationQuery}`)
+      .set(auth);
+
+    expect(response.status).toBe(200);
+    expect(models.VendorLedger.find).toHaveBeenCalledWith(expect.objectContaining({ locationId }));
+  });
+
+  it.each([
+    `/api/vendors/${vendorId}/statements`,
+    '/api/vendors/payouts',
+  ])('keeps statement and payout reads valid with missing or empty location filters on %s', async (path) => {
+    const [withoutLocation, withEmptyLocation] = await Promise.all([
+      request(app).get(path).set(auth),
+      request(app).get(`${path}?locationId=`).set(auth),
+    ]);
+
+    expect(withoutLocation.status).toBe(200);
+    expect(withEmptyLocation.status).toBe(200);
   });
 
   it('does not expose another location ledger even if a locked user requests it', async () => {

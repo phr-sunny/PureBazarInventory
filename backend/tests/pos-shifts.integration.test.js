@@ -189,6 +189,29 @@ describe('POS cashier shifts API', () => {
     expect(db.shift.status).toBe('OPEN');
   });
 
+  it('accepts missing and empty location filters on locked-user shift reads', async () => {
+    db.shift = {
+      _id: shiftId,
+      cashierId,
+      outletId,
+      openingCash: 0,
+      openedAt: new Date(),
+      status: 'OPEN',
+    };
+
+    const currentWithoutLocation = await request(app).get('/api/pos/shifts/current').set(auth());
+    const currentWithEmptyLocation = await request(app).get('/api/pos/shifts/current?locationId=').set(auth());
+    const reportWithoutLocation = await request(app)
+      .get(`/api/pos/shifts/${shiftId}/report`).set(auth());
+    const reportWithEmptyLocation = await request(app)
+      .get(`/api/pos/shifts/${shiftId}/report?locationId=`).set(auth());
+
+    expect(currentWithoutLocation.status).toBe(200);
+    expect(currentWithEmptyLocation.status).toBe(200);
+    expect(reportWithoutLocation.status).toBe(200);
+    expect(reportWithEmptyLocation.status).toBe(200);
+  });
+
   it('requires shifts:manage for all shift operations', async () => {
     user.roleId.permissions = ['pos:read', 'pos:write'];
 

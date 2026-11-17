@@ -7,7 +7,7 @@ function authConfig(token) {
 function withParams(token, params = {}) {
   return {
     ...authConfig(token),
-    params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')),
+    params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '' && value != null)),
   };
 }
 

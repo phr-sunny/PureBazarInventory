@@ -29,7 +29,10 @@ export const getVendorOverview = (token, id, params = {}) => api.get(`/vendors/$
 });
 export const getVendorLedger = (token, id, params) => api.get(
   `/vendors/${id}/ledger`,
-  { ...authConfig(token), params },
+  {
+    ...authConfig(token),
+    params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '' && value != null)),
+  },
 );
 export const getVendorStatements = (token, id) => api.get(
   `/vendors/${id}/statements`,

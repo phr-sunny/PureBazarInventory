@@ -15,7 +15,7 @@ router.use(enforceLocationScope.forAccountingRead);
 const dateRange = [
   query('from').optional().isISO8601({ strict: true }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('from must be YYYY-MM-DD'),
   query('to').optional().isISO8601({ strict: true }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('to must be YYYY-MM-DD'),
-  query('locationId').optional().isMongoId().withMessage('A valid location is required'),
+  query('locationId').optional({ values: 'falsy' }).isMongoId().withMessage('A valid location is required'),
   query('to').custom((to, { req }) => !req.query.from || !to || to >= req.query.from).withMessage('to must not be before from'),
 ];
 const wrap = (handler) => async (req, res, next) => {

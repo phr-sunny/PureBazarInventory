@@ -14,9 +14,9 @@ export function canSelectAccountingLocation(user) {
 export function accountingLocationParam(user, selectedLocationId) {
   if (!canSelectAccountingLocation(user)) {
     const assigned = user?.locationId?._id || user?.locationId;
-    return assigned ? String(assigned) : '';
+    return assigned ? String(assigned) : undefined;
   }
-  return selectedLocationId === 'all' ? '' : selectedLocationId;
+  return selectedLocationId === 'all' ? undefined : selectedLocationId || undefined;
 }
 
 export function useAccountingLocations(token, user) {

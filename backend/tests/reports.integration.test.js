@@ -236,6 +236,7 @@ describe('reports API', () => {
     app.use('/api/reports', reportRoutes);
     app.use(errorMiddleware);
     let permissions;
+    let canViewAllLocations;
     const auth = () => ({ Authorization: `Bearer ${jwt.sign({ sub: userId.toString() }, secret)}` });
     const binary = (res, cb) => {
       const chunks = [];
@@ -246,10 +247,11 @@ describe('reports API', () => {
     beforeEach(() => {
       process.env.JWT_SECRET = secret;
       permissions = ['reports:read'];
+      canViewAllLocations = true;
       models.User.findById.mockImplementation(() => ({
         populate: jest.fn(async () => ({
-          _id: userId, isActive: true,
-          roleId: { _id: userId, name: 'Role', permissions, canViewAllLocations: true },
+          _id: userId, isActive: true, locationId: outletA,
+          roleId: { _id: userId, name: 'Role', permissions, canViewAllLocations },
         })),
       }));
       models.Location.findById.mockImplementation((locationId) => {
@@ -282,6 +284,46 @@ describe('reports API', () => {
       expect(response.status).toBe(200);
       expect(response.body.report.totals.billCount).toBe(0);
       expect(models.Location.findById).toHaveBeenCalledWith(outletB.toString());
+    });
+
+    it.each([
+      '/sales',
+      '/stock',
+      '/vendor-profitability',
+      '/profit-loss',
+      '/vat-discount',
+    ])('accepts missing and empty location filters for all-location reports on %s', async (path) => {
+      const [withoutLocation, withEmptyLocation] = await Promise.all([
+        request(app).get(`/api/reports${path}`).set(auth()),
+        request(app).get(`/api/reports${path}?locationId=`).set(auth()),
+      ]);
+
+      expect(withoutLocation.status).toBe(200);
+      expect(withEmptyLocation.status).toBe(200);
+    });
+
+    it.each([
+      '/sales',
+      '/stock',
+      '/vendor-profitability',
+      '/profit-loss',
+      '/vat-discount',
+    ])('uses the assigned location for locked reports with missing and empty filters on %s', async (path) => {
+      canViewAllLocations = false;
+      const expected = path === '/sales'
+        ? await salesReport({ locationId: outletA })
+        : null;
+      const [withoutLocation, withEmptyLocation] = await Promise.all([
+        request(app).get(`/api/reports${path}`).set(auth()),
+        request(app).get(`/api/reports${path}?locationId=`).set(auth()),
+      ]);
+
+      expect(withoutLocation.status).toBe(200);
+      expect(withEmptyLocation.status).toBe(200);
+      if (expected) {
+        expect(withoutLocation.body.report.totals).toEqual(expected.totals);
+        expect(withEmptyLocation.body.report.totals).toEqual(expected.totals);
+      }
     });
 
     it('serves json, Excel and PDF with matching totals', async () => {

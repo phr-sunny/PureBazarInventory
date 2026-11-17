@@ -459,6 +459,11 @@
 	- Decisions: Ledger lines take Order.outlet; the migration backfills from linked orders and uses Central Warehouse when no order is available. Vendor statements and payouts remain company-wide; only vendor ledger activity is location-filtered. New expenses require a location, locked users are forced to theirs, and Super Admin/canViewAllLocations users may select any active location. All-location results preserve existing totals. Run `npm run migrate:vendor-ledger-locations -- --apply` after deploying.
 	- Validation: Backend Jest 46 suites / 295 tests pass; frontend production build passes. Frontend test suite has 1 existing i18n dictionary failure (9 untranslated literals in untouched screens; 28/29 tests pass).
 
+- [x] P7 fix empty location filter
+	- Files: accounting location filter and finance/vendor query serialization; optional locationId validation for vendor ledger, expenses, revenue, and reports; endpoint regression tests for missing/empty filters, locked users, statements, payouts, and shifts.
+	- Decisions: All locations omits locationId from the frontend request; missing or blank accounting locationId resolves through the existing middleware (all for authorized viewers, assigned location for locked users). Statements/payouts remain company-wide; shift access remains outlet-specific.
+	- Validation: Backend Jest 46 suites / 320 tests pass; frontend production build passes. Frontend tests remain 28/29 because the existing i18n dictionary test reports 9 untranslated literals on unrelated screens.
+
 - [x] Fix outdated tests
 	- Files: `backend/tests/models.test.js`, `backend/tests/locations.integration.test.js`, `backend/tests/barcode-engine.test.js`.
 	- Decisions: Updated expected model registration, location activity status, and centered 50mm label barcode position.
