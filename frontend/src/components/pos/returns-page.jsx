@@ -18,13 +18,13 @@ const dateTime = (value) => (value ? new Date(value).toLocaleString() : '—');
 const orderId = (order) => String(order._id || order.id);
 
 export default function ReturnsPage() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const {
-    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
-  } = usePosOutlet();
+    isSuperAdmin, canSelectOutlet, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet({ allowAllLocations: true });
   const {
     orders, loading, error, canRead, loadOrders,
-  } = usePosSales(selectedOutletId);
+  } = usePosSales(selectedOutletId, { allowAllLocations: true });
   const [selected, setSelected] = useState(null);
   const [refundMethod, setRefundMethod] = useState('');
   const [saving, setSaving] = useState(false);
@@ -32,6 +32,7 @@ export default function ReturnsPage() {
   const [notice, setNotice] = useState('');
   useToastMessages({ success: notice, error });
   const canWrite = hasPermission('pos:write');
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
   const eligibleOrders = orders.filter((order) => order.paymentStatus === 'PAID');
 
   async function submitReturn(event) {
@@ -44,7 +45,9 @@ export default function ReturnsPage() {
       await returnPosOrder(orderId(selected), {
         walletRefunded: Boolean(refundMethod),
         ...(refundMethod ? { walletRefundMethod: refundMethod } : {}),
-      }, selectedOutletId);
+      }, isSuperAdmin
+        ? selectedOutletId === 'all' ? selected.outlet : selectedOutletId
+        : undefined);
       setNotice(`Bill ${selected.orderNumber} returned. Its items were restored to stock.`);
       setSelected(null);
       setRefundMethod('');
@@ -62,7 +65,12 @@ export default function ReturnsPage() {
     { key: 'payments', label: 'Payment', render: (payments = []) => payments.map((item) => paymentMethodLabel(item.method)).join(', ') || '—' },
     { key: 'grandTotal', label: 'Refund amount', render: (value) => amount(value) },
     { key: 'action', label: '', render: (_, row) => (
-      <Button size="sm" variant="secondary" disabled={!canWrite} onClick={() => { setSelected(row); setRefundMethod(''); setActionError(''); }}>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={!canWrite || (!isSuperAdmin && String(row.outlet) !== assignedLocationId)}
+        onClick={() => { setSelected(row); setRefundMethod(''); setActionError(''); }}
+      >
         <RotateCcw size={15} /> Return bill
       </Button>
     ) },
@@ -78,7 +86,8 @@ export default function ReturnsPage() {
         <Button variant="secondary" onClick={() => loadOrders()} disabled={loading}><RefreshCw size={16} /> <T>{"Refresh"}</T></Button>
       </header>
       <PosOutletSelector
-        isSuperAdmin={isSuperAdmin}
+        isSuperAdmin={canSelectOutlet}
+        allowAll={canSelectOutlet}
         outlets={outlets}
         selectedOutletId={selectedOutletId}
         loading={loadingOutlets}

@@ -4,10 +4,17 @@ import { useEffect, useState } from 'react';
 import useAuth from '@/store/use-auth';
 import { getLocations } from '@/services/stock';
 
-export default function usePosOutlet({ allowAllLocations = false } = {}) {
+export default function usePosOutlet({
+  allowAllLocations = false,
+  allowLocationSelection = false,
+  defaultAssignedOutlet = false,
+  defaultFirstOutlet = false,
+} = {}) {
   const { token, user } = useAuth();
   const isSuperAdmin = user?.role === 'Super Admin' || user?.permissions?.includes('*');
-  const canSelectOutlet = isSuperAdmin || (allowAllLocations && Boolean(user?.canViewAllLocations));
+  const canSelectOutlet = isSuperAdmin
+    || ((allowAllLocations || allowLocationSelection) && Boolean(user?.canViewAllLocations));
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
   const [outlets, setOutlets] = useState([]);
   const [selectedOutletId, setSelectedOutletId] = useState('');
   const [loadingOutlets, setLoadingOutlets] = useState(false);
@@ -29,11 +36,19 @@ export default function usePosOutlet({ allowAllLocations = false } = {}) {
       if (!active) return;
       const activeOutlets = data.locations.filter((location) => location.isActive);
       setOutlets(activeOutlets);
-      setSelectedOutletId((current) => (
-        current === 'all' && allowAllLocations
-          ? current
-          : activeOutlets.some((location) => location.id === current) ? current : (allowAllLocations ? 'all' : '')
-      ));
+      setSelectedOutletId((current) => {
+        if (allowAllLocations) {
+          return current === 'all' || activeOutlets.some((location) => location.id === current)
+            ? current
+            : 'all';
+        }
+        if (activeOutlets.some((location) => location.id === current)) return current;
+        if (defaultAssignedOutlet && !isSuperAdmin
+          && activeOutlets.some((location) => location.id === assignedLocationId)) {
+          return assignedLocationId;
+        }
+        return defaultFirstOutlet ? activeOutlets[0]?.id || '' : '';
+      });
     }).catch((error) => {
       if (active) setOutletError(error.response?.data?.message || 'Unable to load active outlets.');
     }).finally(() => {
@@ -41,7 +56,7 @@ export default function usePosOutlet({ allowAllLocations = false } = {}) {
     });
 
     return () => { active = false; };
-  }, [allowAllLocations, canSelectOutlet, token]);
+  }, [allowAllLocations, assignedLocationId, canSelectOutlet, defaultAssignedOutlet, defaultFirstOutlet, isSuperAdmin, token]);
 
   return {
     isSuperAdmin,

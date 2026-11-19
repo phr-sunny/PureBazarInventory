@@ -26,7 +26,9 @@ const validDate = (value) => {
 };
 
 router.get('/history', salesHistoryRead, [
-  query('outlet').optional().isMongoId(),
+  query('selectedOutletId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid outlet ID is required'),
+  query('outlet').optional({ values: 'falsy' }).isMongoId(),
   query('cashier').optional().isMongoId(),
   query('shareholderId').optional().isMongoId(),
   query('vendor').optional().isMongoId(),

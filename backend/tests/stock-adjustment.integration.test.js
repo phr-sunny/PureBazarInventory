@@ -313,6 +313,99 @@ describe('stock adjustment and count API', () => {
     expect(counts.size).toBe(0);
   });
 
+  it('lets an all-location reader select other registers but keeps adjustment and count writes locked', async () => {
+    const remoteAdjustment = document({
+      warehouseId: new mongoose.Types.ObjectId(ids.otherOutlet),
+      reason: 'Remote adjustment',
+      status: 'Pending',
+      lines: [{ productId: new mongoose.Types.ObjectId(ids.product), quantity: 1 }],
+    });
+    const remoteCount = document({
+      warehouseId: new mongoose.Types.ObjectId(ids.otherOutlet),
+      reason: 'Remote count',
+      status: 'Counting',
+      lines: [{ productId: new mongoose.Types.ObjectId(ids.product), countedQuantity: 1 }],
+    });
+    adjustments.set(remoteAdjustment._id.toString(), remoteAdjustment);
+    counts.set(remoteCount._id.toString(), remoteCount);
+    user = {
+      ...user,
+      locationId: { ...locations.get(ids.outlet), _id: new mongoose.Types.ObjectId(ids.outlet) },
+      roleId: {
+        name: 'Deputy',
+        permissions: ['stock:read', 'stock:write'],
+        canViewAllLocations: true,
+      },
+    };
+
+    const adjustmentRead = await request(app).get('/api/stock-adjustments')
+      .query({ selectedOutletId: ids.otherOutlet }).set(auth());
+    const adjustmentAll = await request(app).get('/api/stock-adjustments?selectedOutletId=').set(auth());
+    const countRead = await request(app).get('/api/stock-counts')
+      .query({ selectedOutletId: ids.otherOutlet }).set(auth());
+    const countAll = await request(app).get('/api/stock-counts?warehouseId=').set(auth());
+    const adjustmentWrite = await request(app).post('/api/stock-adjustments').set(auth()).send({
+      warehouseId: ids.otherOutlet,
+      mode: 'ADD',
+      reason: 'Found extra stock',
+      lines: [{ productId: ids.product, quantity: 1 }],
+    });
+    const countWrite = await request(app).post('/api/stock-counts').set(auth()).send({
+      warehouseId: ids.otherOutlet,
+      reason: 'Locked count',
+      lines: [{ productId: ids.product, countedQuantity: 1 }],
+    });
+    const approveRemote = await request(app)
+      .post(`/api/stock-adjustments/${remoteAdjustment._id}/approve`).set(auth());
+    const postRemote = await request(app)
+      .post(`/api/stock-counts/${remoteCount._id}/post`).set(auth());
+
+    expect(adjustmentRead.status).toBe(200);
+    expect(adjustmentRead.body.stockAdjustments.map((item) => item.warehouseId.toString()))
+      .toEqual([ids.otherOutlet]);
+    expect(adjustmentAll.status).toBe(200);
+    expect(adjustmentAll.body.stockAdjustments).toHaveLength(1);
+    expect(countRead.status).toBe(200);
+    expect(countRead.body.stockCounts.map((item) => item.warehouseId.toString()))
+      .toEqual([ids.otherOutlet]);
+    expect(countAll.status).toBe(200);
+    expect(countAll.body.stockCounts).toHaveLength(1);
+    expect(adjustmentWrite.status).toBe(201);
+    expect(adjustmentWrite.body.stockAdjustment.warehouseId.toString()).toBe(ids.outlet);
+    expect(countWrite.status).toBe(201);
+    expect(countWrite.body.stockCount.warehouseId.toString()).toBe(ids.outlet);
+    expect(approveRemote.status).toBe(403);
+    expect(postRemote.status).toBe(403);
+  });
+
+  it('keeps adjustment and count reads at the assigned central warehouse without the role setting', async () => {
+    const remoteAdjustment = document({
+      warehouseId: new mongoose.Types.ObjectId(ids.otherOutlet),
+      reason: 'Remote adjustment',
+      status: 'Approved',
+      lines: [],
+    });
+    const remoteCount = document({
+      warehouseId: new mongoose.Types.ObjectId(ids.otherOutlet),
+      reason: 'Remote count',
+      status: 'Posted',
+      lines: [],
+    });
+    adjustments.set(remoteAdjustment._id.toString(), remoteAdjustment);
+    counts.set(remoteCount._id.toString(), remoteCount);
+
+    const adjustmentsRead = await request(app).get('/api/stock-adjustments?selectedOutletId=')
+      .set(auth());
+    const countsRead = await request(app).get('/api/stock-counts')
+      .query({ selectedOutletId: ids.otherOutlet }).set(auth());
+
+    expect(adjustmentsRead.status).toBe(200);
+    expect(adjustmentsRead.body.stockAdjustments).toEqual([]);
+    expect(countsRead.status).toBe(200);
+    expect(countsRead.body.stockCounts).toEqual([]);
+    expect(StockCount.find.mock.calls.at(-1)[0].warehouseId.toString()).toBe(ids.warehouse);
+  });
+
   it('only grants global stock access to Super Admin and denies unassigned users', () => {
     expect(hasGlobalStockAccess({ role: 'Team', permissions: ['stock:write'] })).toBe(false);
     expect(canManageLocation({ role: 'Team', permissions: [] }, ids.warehouse)).toBe(false);

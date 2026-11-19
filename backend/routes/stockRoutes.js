@@ -73,8 +73,11 @@ router.get('/stock', [...read, enforceLocationScope.forStockRead], [
 router.get('/inventory/outlet-products', [...read, enforceLocationScope.forStockRead], [
   query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
 ], validateRequest, stockController.getOutletProducts);
-router.get('/stock-adjustments', read, [
-  query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
+router.get('/stock-adjustments', [...read, enforceLocationScope], [
+  query('selectedOutletId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid location ID is required'),
+  query('warehouseId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid warehouse or outlet ID is required'),
   query('status').optional().isIn(['Draft', 'Pending', 'Approved', 'Rejected'])
     .withMessage('A valid adjustment status is required'),
 ], validateRequest, stockAdjustmentController.listAdjustments);
@@ -96,8 +99,11 @@ router.post('/stock-adjustments/:id/approve', adminApproval, [
 router.post('/stock-adjustments/:id/reject', adminApproval, [
   adjustmentId,
 ], validateRequest, stockAdjustmentController.rejectAdjustment);
-router.get('/stock-counts', [...read, enforceLocationScope.forStockCounts], [
-  query('warehouseId').optional().isMongoId().withMessage('A valid warehouse or outlet ID is required'),
+router.get('/stock-counts', scopedRead, [
+  query('selectedOutletId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid location ID is required'),
+  query('warehouseId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid warehouse or outlet ID is required'),
   query('status').optional().isIn(['Draft', 'Counting', 'PendingApproval', 'Posted', 'Rejected'])
     .withMessage('A valid stock count status is required'),
 ], validateRequest, stockCountController.listCounts);
@@ -113,6 +119,8 @@ router.post('/stock-counts/:id/post', [...write, enforceLocationScope.forStockCo
 ], validateRequest, stockCountController.postCount);
 router.get('/stock-transfers', [
   authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
+  query('selectedOutletId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid location ID is required'),
   query('status').optional().isIn(['Requested', 'Dispatched', 'Received', 'Discrepancy'])
     .withMessage('A valid transfer status is required'),
 ], validateRequest, stockTransferController.listTransfers);
@@ -162,7 +170,8 @@ router.get('/stock/vendors/:id/next-challan', read, [
   param('id').isMongoId().withMessage('A valid vendor ID is required'),
 ], validateRequest, goodsReceiveController.nextChallanNumber);
 router.get('/goods-receives', scopedRead, [
-  query('selectedOutletId').optional().isMongoId().withMessage('A valid location ID is required'),
+  query('selectedOutletId').optional({ values: 'falsy' }).isMongoId()
+    .withMessage('A valid location ID is required'),
 ], validateRequest, goodsReceiveController.listGoodsReceives);
 router.post('/goods-receives', scopedWrite, [
   body('ownerType').isIn(['COMPANY', 'VENDOR']).withMessage('Owner type must be COMPANY or VENDOR'),

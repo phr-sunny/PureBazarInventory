@@ -62,11 +62,13 @@ async function buildReport(shift, closedAt = shift.closedAt || new Date()) {
   };
 }
 
-function assertShiftAccess(shift, user, locationId) {
+function assertShiftAccess(shift, user, locationId, { readOnly = false } = {}) {
   if (shift.outletId.toString() !== locationId.toString()) {
     throw statusError('Shift access is limited to the selected outlet', 403);
   }
-  if (user.role !== 'Super Admin' && shift.cashierId.toString() !== user._id.toString()) {
+  if (user.role !== 'Super Admin'
+    && !(readOnly && user.canViewAllLocations)
+    && shift.cashierId.toString() !== user._id.toString()) {
     throw statusError('Shift access is limited to the assigned cashier', 403);
   }
 }
@@ -122,7 +124,7 @@ async function getCurrentShift(req) {
 async function getShiftReport(req) {
   const shift = await Shift.findById(req.params.shiftId).lean();
   if (!shift) throw statusError('Shift was not found', 404);
-  assertShiftAccess(shift, req.user, req.locationId);
+  assertShiftAccess(shift, req.user, req.locationId, { readOnly: true });
   return { shift, report: await buildReport(shift) };
 }
 

@@ -9,7 +9,7 @@ jest.mock('../models', () => ({
   Product: { find: jest.fn() },
   StockMovement: { aggregate: jest.fn(), create: jest.fn() },
   StockTransfer: { create: jest.fn(), find: jest.fn(), findOne: jest.fn() },
-  User: { findById: jest.fn() },
+  User: { find: jest.fn(), findById: jest.fn() },
 }));
 
 const {
@@ -85,6 +85,7 @@ describe('stock transfer API', () => {
   let currentUser;
   let transfers;
   let movements;
+  let auditLogs;
   let session;
 
   function auth(userId) {
@@ -128,6 +129,7 @@ describe('stock transfer API', () => {
       quantity: 50,
       type: 'GRN',
     }];
+    auditLogs = [];
     session = {
       withTransaction: jest.fn(async (callback) => {
         const savedTransfers = new Map([...transfers].map(([key, value]) => [key, cloneTransfer(value)]));
@@ -144,9 +146,17 @@ describe('stock transfer API', () => {
     };
     jest.spyOn(mongoose, 'startSession').mockResolvedValue(session);
     User.findById.mockReturnValue({ populate: jest.fn().mockImplementation(async () => currentUser) });
+    User.find.mockImplementation(() => ({
+      select: jest.fn(() => ({
+        lean: jest.fn(async () => [{
+          _id: currentUser._id,
+          name: currentUser.name || 'Transfer confirmer',
+        }]),
+      })),
+    }));
     Location.findById.mockImplementation((id) => query(locations.get(id.toString()) || null));
     Product.find.mockReturnValue(query([product]));
-    AuditLog.create.mockResolvedValue([]);
+    AuditLog.create.mockImplementation(async (rows) => { auditLogs.push(...rows); return rows; });
     StockTransfer.create.mockImplementation(async ([data]) => {
       const transfer = transferDocument(data);
       transfers.set(transfer._id.toString(), transfer);
@@ -292,6 +302,153 @@ describe('stock transfer API', () => {
     const wrongOutletReceipt = await request(app).post(`/api/stock-transfers/${id}/receive`)
       .set(auth(outletUserId)).send({ lines: [{ productId, receivedQuantity: 6 }] });
     expect(visible.status).toBe(404);
+    expect(wrongOutletReceipt.status).toBe(404);
+  });
+
+  it('filters transfer reads by the selected location for all-location roles', async () => {
+    const requested = await createRequestedTransfer();
+    const id = requested.body.stockTransfer.id;
+    currentUser = {
+      _id: outletUserId,
+      isActive: true,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['stock:transfer:read', 'stock:transfer:write'],
+        canViewAllLocations: true,
+      },
+      locationId: new mongoose.Types.ObjectId(otherOutletId),
+    };
+
+    const wrongSourceRequest = await request(app).post('/api/stock-transfers')
+      .set(auth(outletUserId)).send({
+        fromWarehouseId: centralId,
+        toWarehouseId: outletId,
+        lines: [{ productId, requestedQuantity: 1 }],
+      });
+    const selected = await request(app).get('/api/stock-transfers')
+      .query({ selectedOutletId: outletId }).set(auth(outletUserId));
+    const all = await request(app).get('/api/stock-transfers?selectedOutletId=')
+      .set(auth(outletUserId));
+    currentUser = {
+      _id: warehouseUserId,
+      isActive: true,
+      roleId: {
+        name: 'Warehouse Staff',
+        permissions: ['stock:transfer:read', 'stock:transfer:write'],
+      },
+      locationId: new mongoose.Types.ObjectId(centralId),
+    };
+    const locked = await request(app).get('/api/stock-transfers')
+      .query({ selectedOutletId: centralId }).set(auth(warehouseUserId));
+
+    expect(wrongSourceRequest.status).toBe(403);
+    expect(selected.status).toBe(200);
+    expect(selected.body.stockTransfers.map((transfer) => transfer.id)).toEqual([id]);
+    expect(StockTransfer.find).toHaveBeenLastCalledWith({
+      $or: [{ fromWarehouseId: expect.anything() }, { toWarehouseId: expect.anything() }],
+    });
+    expect(all.status).toBe(200);
+    expect(all.body.stockTransfers).toHaveLength(1);
+    expect(locked.status).toBe(200);
+    expect(locked.body.stockTransfers).toHaveLength(1);
+  });
+
+  it('filters Super Admin transfer reads by a selected location', async () => {
+    currentUser = {
+      _id: new mongoose.Types.ObjectId(warehouseUserId),
+      isActive: true,
+      roleId: { name: 'Super Admin', permissions: ['*'] },
+      locationId: null,
+    };
+
+    const response = await request(app).get('/api/stock-transfers')
+      .query({ selectedOutletId: outletId }).set(auth(warehouseUserId));
+
+    expect(response.status).toBe(200);
+    expect(StockTransfer.find).toHaveBeenCalledWith({
+      $or: [
+        { fromWarehouseId: expect.anything() },
+        { toWarehouseId: expect.anything() },
+      ],
+    });
+    const locationFilter = StockTransfer.find.mock.calls.at(-1)[0].$or;
+    expect(locationFilter[0].fromWarehouseId.toString()).toBe(outletId);
+    expect(locationFilter[1].toWarehouseId.toString()).toBe(outletId);
+  });
+
+  it('lets an all-location reader with receive permission confirm any destination transfer', async () => {
+    const requested = await createRequestedTransfer(10);
+    const id = requested.body.stockTransfer.id;
+    await request(app).post(`/api/stock-transfers/${id}/dispatch`)
+      .set(auth(warehouseUserId)).send({ lines: [{ productId, dispatchedQuantity: 10 }] }).expect(200);
+    currentUser = {
+      _id: new mongoose.Types.ObjectId(outletUserId),
+      name: 'Deputy Receiver',
+      isActive: true,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['stock:transfer:read', 'stock:transfer:receive'],
+        canViewAllLocations: true,
+      },
+      locationId: new mongoose.Types.ObjectId(otherOutletId),
+    };
+
+    const received = await request(app).post(`/api/stock-transfers/${id}/receive`)
+      .set(auth(outletUserId)).send({ lines: [{ productId, receivedQuantity: 8 }] });
+    currentUser = {
+      ...currentUser,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['stock:transfer:read'],
+        canViewAllLocations: true,
+      },
+    };
+    const deniedWithoutPermission = await request(app).post(`/api/stock-transfers/${id}/receive`)
+      .set(auth(outletUserId)).send({ lines: [{ productId, receivedQuantity: 8 }] });
+
+    expect(received.status).toBe(200);
+    expect(received.body.stockTransfer).toMatchObject({
+      status: 'Discrepancy',
+      toWarehouseId: outletId,
+      receivedByName: 'Deputy Receiver',
+      lines: [{ dispatchedQuantity: 10, receivedQuantity: 8, discrepancyQuantity: 2 }],
+    });
+    expect(movements.at(-1)).toMatchObject({ type: 'TRANSFER_IN', quantity: 8 });
+    expect(movements.at(-1).warehouseId.toString()).toBe(outletId);
+    const receiptAudit = auditLogs.find((event) => event.action === 'RECEIVE');
+    expect(receiptAudit.metadata.confirmedBy.toString()).toBe(currentUser._id.toString());
+    expect(receiptAudit.metadata.destination.toString()).toBe(outletId);
+    expect(deniedWithoutPermission.status).toBe(403);
+
+    currentUser = {
+      _id: warehouseUserId,
+      isActive: true,
+      roleId: {
+        name: 'Warehouse Staff',
+        permissions: ['stock:transfer:read', 'stock:transfer:write'],
+      },
+      locationId: new mongoose.Types.ObjectId(centralId),
+    };
+    const otherDestination = await request(app).post('/api/stock-transfers')
+      .set(auth(warehouseUserId)).send({
+        fromWarehouseId: centralId,
+        toWarehouseId: otherOutletId,
+        lines: [{ productId, requestedQuantity: 1 }],
+      });
+    await request(app).post(`/api/stock-transfers/${otherDestination.body.stockTransfer.id}/dispatch`)
+      .set(auth(warehouseUserId)).send({ lines: [{ productId, dispatchedQuantity: 1 }] }).expect(200);
+    currentUser = {
+      _id: outletUserId,
+      isActive: true,
+      roleId: {
+        name: 'Outlet Cashier',
+        permissions: ['stock:transfer:read', 'stock:transfer:receive'],
+      },
+      locationId: new mongoose.Types.ObjectId(outletId),
+    };
+    const wrongOutletReceipt = await request(app)
+      .post(`/api/stock-transfers/${otherDestination.body.stockTransfer.id}/receive`)
+      .set(auth(outletUserId)).send({ lines: [{ productId, receivedQuantity: 1 }] });
     expect(wrongOutletReceipt.status).toBe(404);
   });
 

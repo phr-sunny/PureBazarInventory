@@ -705,3 +705,8 @@
 	- Files: POS checkout stock query and integration tests.
 	- Decisions: cast the checkout warehouseId to ObjectId to match StockMovement storage and the POS availability query; keep Super Admin outlet selection in the selectedOutletId query parameter consumed by scope middleware; keep locked cashier scope unchanged. Stock errors identify the product and show available package/piece quantity.
 	- Validation: backend Jest passes (46 suites, 323 tests); frontend production build passes. Frontend tests remain 28/29 due to nine pre-existing untranslated UI literals unrelated to this change.
+
+- [x] A Oversight, transfer receipt and UI lock
+	- Files: location-scoped stock and POS routes/controllers/services; integration tests; GRN, adjustment, count, transfer, return, shift and sales-history screens; shared location filters and badges.
+	- Decisions: Super Admin and `canViewAllLocations` users select active locations on reads; All omits the location query parameter. Other users remain scoped to their assigned location. Writes remain location-locked except the existing Central Warehouse stock-count rule and the permitted all-location transfer-receipt exception. Transfer reads honor a selected location, and receipt output/audit records the confirmer and destination.
+	- Validation: backend Jest passes (46 suites, 332 tests); frontend production build passes. Frontend tests pass 28/29; the remaining existing i18n assertion reports eight untranslated literals, including goods-receive and unrelated UI text. `git diff --check` passes.

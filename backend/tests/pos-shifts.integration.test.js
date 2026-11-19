@@ -26,6 +26,7 @@ const otherCashierId = new mongoose.Types.ObjectId('65b000000000000000000024');
 
 function query(value) {
   const chain = {
+    select: jest.fn(() => chain),
     session: jest.fn(() => chain),
     lean: jest.fn(async () => value),
   };
@@ -238,6 +239,35 @@ describe('POS cashier shifts API', () => {
     expect(response.status).toBe(403);
   });
 
+  it('lets an all-location reader view shift reports at a selected outlet only', async () => {
+    user = {
+      ...user,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['pos:read', 'pos:write', 'shifts:manage'],
+        canViewAllLocations: true,
+      },
+      locationId: outletId,
+    };
+    db.shift = {
+      _id: shiftId,
+      cashierId: otherCashierId,
+      outletId: otherOutletId,
+      openingCash: 0,
+      openedAt: new Date(),
+      status: 'OPEN',
+    };
+
+    const selected = await request(app).get(`/api/pos/shifts/${shiftId}/report`)
+      .query({ selectedOutletId: otherOutletId.toString() }).set(auth());
+    const empty = await request(app).get(`/api/pos/shifts/${shiftId}/report?selectedOutletId=`)
+      .set(auth());
+
+    expect(selected.status).toBe(200);
+    expect(empty.status).toBe(403);
+    expect(empty.body.message).toMatch(/selected outlet/i);
+  });
+
   it('prevents a locked cashier from reading another outlet shift', async () => {
     db.shift = {
       _id: shiftId,
@@ -264,5 +294,27 @@ describe('POS cashier shifts API', () => {
     expect(response.status).toBe(400);
     expect(response.body.message).toMatch(/select an outlet/i);
     expect(models.Shift.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps all-location shift writes at the assigned outlet despite a read selection', async () => {
+    user = {
+      ...user,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['pos:read', 'pos:write', 'shifts:manage'],
+        canViewAllLocations: true,
+      },
+    };
+
+    const opened = await request(app).post('/api/pos/shifts')
+      .query({ selectedOutletId: otherOutletId.toString() }).set(auth())
+      .send({ openingCash: 50, outletId: otherOutletId.toString() });
+    const assigned = await request(app).post('/api/pos/shifts').set(auth())
+      .send({ openingCash: 50 });
+
+    expect(opened.status).toBe(201);
+    expect(opened.body.shift.outletId.toString()).toBe(outletId.toString());
+    expect(assigned.status).toBe(409);
+    expect(models.Shift.create).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const {
-  AuditLog, Location, Product, StockMovement, StockTransfer,
+  AuditLog, Location, Product, StockMovement, StockTransfer, User,
 } = require('../models');
 const { unitLabelMap } = require('../utils/productDisplay');
 const { isSuperAdmin } = require('../utils/locationScope');
@@ -12,7 +12,15 @@ function statusError(message, status) {
 }
 
 function locationFilter(req) {
-  if (isSuperAdmin(req.user)) return {};
+  if (isSuperAdmin(req.user) || req.user.canViewAllLocations) {
+    if (!req.locationId) return {};
+    return {
+      $or: [
+        { fromWarehouseId: req.locationId },
+        { toWarehouseId: req.locationId },
+      ],
+    };
+  }
   return {
     $or: [
       { fromWarehouseId: req.locationId },
@@ -28,6 +36,8 @@ function canManageSource(req, locationId) {
 
 function canReceive(req, locationId) {
   return isSuperAdmin(req.user)
+    || (req.user.canViewAllLocations
+      && req.user.permissions.includes('stock:transfer:receive'))
     || Boolean(req.locationId && req.locationId.toString() === locationId.toString());
 }
 
@@ -40,8 +50,9 @@ function normalizeRequestedLines(lines) {
   return [...combined].map(([productId, requestedQuantity]) => ({ productId, requestedQuantity }));
 }
 
-function transferOutput(transfer, productsById) {
+function transferOutput(transfer, productsById, receiverNames) {
   const data = transfer.toObject ? transfer.toObject() : transfer;
+  const receivedBy = data.receivedBy?.toString() || null;
   return {
     id: data._id.toString(),
     fromWarehouseId: data.fromWarehouseId.toString(),
@@ -49,7 +60,8 @@ function transferOutput(transfer, productsById) {
     status: data.status,
     createdBy: data.createdBy?.toString(),
     dispatchedBy: data.dispatchedBy?.toString() || null,
-    receivedBy: data.receivedBy?.toString() || null,
+    receivedBy,
+    receivedByName: receivedBy ? receiverNames.get(receivedBy) || null : null,
     dispatchedAt: data.dispatchedAt || null,
     receivedAt: data.receivedAt || null,
     createdAt: data.createdAt,
@@ -83,11 +95,25 @@ async function transferOutputs(transfers) {
     ...product,
     isWeightBased: /^(gram|grams|g)$/i.test(String(labels.names.get(product.unitId?.toString()) || '').trim()),
   }]));
-  return items.map((transfer) => transferOutput(transfer, productsById));
+  const receiverIds = [...new Set(items.map((transfer) => {
+    const data = transfer.toObject ? transfer.toObject() : transfer;
+    return data.receivedBy?.toString();
+  }).filter(Boolean))];
+  const receivers = receiverIds.length
+    ? await User.find({ _id: { $in: receiverIds } }).select('_id name').lean()
+    : [];
+  const receiverNames = new Map(receivers.map((user) => [user._id.toString(), user.name]));
+  return items.map((transfer) => transferOutput(transfer, productsById, receiverNames));
 }
 
-async function loadScopedTransfer(id, req, session) {
-  let query = StockTransfer.findOne({ _id: id, ...locationFilter(req) });
+async function loadScopedTransfer(id, req, session, { allowAllLocationReceipt = false } = {}) {
+  const canLoadAnyForReceipt = allowAllLocationReceipt
+    && req.user.canViewAllLocations
+    && req.user.permissions.includes('stock:transfer:receive');
+  let query = StockTransfer.findOne({
+    _id: id,
+    ...(canLoadAnyForReceipt ? {} : locationFilter(req)),
+  });
   if (session) query = query.session(session);
   const transfer = await query;
   if (!transfer) throw statusError('Stock transfer not found', 404);
@@ -263,7 +289,9 @@ async function receiveTransfer(req, res, next) {
     session = await mongoose.startSession();
     let output;
     await session.withTransaction(async () => {
-      const transfer = await loadScopedTransfer(req.params.id, req, session);
+      const transfer = await loadScopedTransfer(req.params.id, req, session, {
+        allowAllLocationReceipt: true,
+      });
       if (!canReceive(req, transfer.toWarehouseId)) {
         throw statusError('Only the receiving outlet can confirm this transfer', 403);
       }
@@ -307,6 +335,7 @@ async function receiveTransfer(req, res, next) {
         entityId: transfer._id,
         before,
         after: transfer.toObject(),
+        metadata: { confirmedBy: req.user._id, destination: transfer.toWarehouseId },
         ipAddress: req.ip,
       }], { session });
       [output] = await transferOutputs([transfer]);

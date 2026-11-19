@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { ArrowDownToLine, ArrowUpFromLine, Check } from 'lucide-react';
 import { Badge, Button, Card, Input, Select, Table } from '@/components/ui';
 import StockTransferRequestForm from '@/components/inventory/stock-transfer-request-form';
+import LocationReadFilter from '@/components/common/location-read-filter';
 import {
   createStockTransfer, dispatchStockTransfer, getLocations, getStockTransfers, receiveStockTransfer,
 } from '@/services/stock';
@@ -34,12 +35,16 @@ export default function StockTransfersPage() {
   const canWrite = can(permissions, 'stock:transfer:write');
   const canReceive = can(permissions, 'stock:transfer:receive');
   const isSuperAdmin = user?.role === 'Super Admin';
+  const canSelectRegisterLocation = isSuperAdmin || Boolean(user?.canViewAllLocations);
   const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
-  const canChooseSource = isSuperAdmin || user?.location?.type === 'CENTRAL';
+  const canChooseSource = isSuperAdmin;
+  const canRequestTransfer = isSuperAdmin || user?.location?.type === 'CENTRAL';
   const [transfers, setTransfers] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [sourceId, setSourceId] = useState('');
   const [outletId, setOutletId] = useState('');
+  const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [selectedId, setSelectedId] = useState('');
   const [quantityDraft, setQuantityDraft] = useState({});
   const [statusFilter, setStatusFilter] = useState('');
@@ -56,22 +61,38 @@ export default function StockTransfersPage() {
       return undefined;
     }
     let active = true;
-    Promise.all([getStockTransfers(token), getLocations(token)])
-      .then(([transferResponse, locationResponse]) => {
+    getLocations(token)
+      .then((locationResponse) => {
         if (!active) return;
         const availableLocations = locationResponse.data.locations.filter((location) => location.isActive !== false);
-        setTransfers(transferResponse.data.stockTransfers);
         setLocations(availableLocations);
-        setSourceId(availableLocations.find(({ id }) => id === assignedLocationId)?.id
-          || availableLocations.find(({ type }) => type === 'CENTRAL')?.id || '');
+        const assigned = availableLocations.find(({ id }) => id === assignedLocationId);
+        setSourceId(isSuperAdmin
+          ? availableLocations.find(({ type }) => type === 'CENTRAL')?.id || ''
+          : assigned?.type === 'CENTRAL' ? assigned.id : '');
         setOutletId(availableLocations.find(({ type, isActive }) => type === 'OUTLET' && isActive !== false)?.id || '');
+        setSelectedOutletId((current) => canSelectRegisterLocation ? current || 'all' : assignedLocationId);
+        setLocationsLoaded(true);
       })
       .catch((requestError) => active && setError(
         requestError.response?.data?.message || 'Unable to load outlet transfers.',
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [assignedLocationId, canRead, canWrite, initialized, permissions, token]);
+  }, [assignedLocationId, canRead, canSelectRegisterLocation, initialized, isSuperAdmin, token]);
+
+  useEffect(() => {
+    if (!initialized || !token || !canRead || !locationsLoaded) return undefined;
+    let active = true;
+    setLoading(true);
+    getStockTransfers(token, canSelectRegisterLocation ? selectedOutletId : undefined)
+      .then((response) => active && setTransfers(response.data.stockTransfers))
+      .catch((requestError) => active && setError(
+        requestError.response?.data?.message || 'Unable to load outlet transfers.',
+      ))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [canRead, canSelectRegisterLocation, initialized, locationsLoaded, selectedOutletId, token]);
   const locationsById = useMemo(() => new Map(locations.map((location) => [location.id, location.name])), [locations]);
   const visibleTransfers = useMemo(() => transfers.filter((transfer) => (
     !statusFilter || transfer.status === statusFilter
@@ -83,7 +104,9 @@ export default function StockTransfersPage() {
     isSuperAdmin || assignedLocationId === selectedTransfer.fromWarehouseId
   ));
   const canReceiveSelected = Boolean(selectedTransfer && canReceive && (
-    isSuperAdmin || assignedLocationId === selectedTransfer.toWarehouseId
+    isSuperAdmin
+    || (user?.canViewAllLocations && can(permissions, 'stock:transfer:receive'))
+    || assignedLocationId === selectedTransfer.toWarehouseId
   ));
 
   function selectTransfer(transfer) {
@@ -185,12 +208,13 @@ export default function StockTransfersPage() {
         <p className="mt-1 text-sm text-slate-600"><T>{"Request stock, dispatch from the central warehouse, and confirm outlet deliveries."}</T></p>
       </div>
 
-      {canWrite && canChooseSource && (
+      {canWrite && canRequestTransfer && (
         <StockTransferRequestForm
           token={token}
           permissions={permissions}
           canChooseSource={canChooseSource}
           sourceLocations={sourceLocations}
+          locationName={user?.location?.name}
           outletLocations={outletLocations}
           sourceId={sourceId}
           setSourceId={setSourceId}
@@ -202,7 +226,16 @@ export default function StockTransfersPage() {
         />
       )}
 
-      <Card title="Transfer register" description={`${transfers.length} transfer${transfers.length === 1 ? '' : 's'} in your location scope`}>
+      <Card title="Transfer register" description={`${transfers.length} transfer${transfers.length === 1 ? '' : 's'} ${canSelectRegisterLocation && selectedOutletId === 'all' ? 'across all locations' : 'in your location scope'}`}>
+        <div className="mb-4">
+          <LocationReadFilter
+            locations={locations}
+            selectedOutletId={selectedOutletId}
+            onChange={(event) => setSelectedOutletId(event.target.value)}
+            canSelectLocation={canSelectRegisterLocation}
+            locationName={user?.location?.name}
+          />
+        </div>
         <div className="mb-4 max-w-xs">
           <Select label="Filter by status" name="statusFilter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
             <option value=""><T>{"All statuses"}</T></option>
@@ -220,6 +253,9 @@ export default function StockTransfersPage() {
         >
           <form className="space-y-4" onSubmit={submitWorkflow}>
             <div className="space-y-3">
+              {selectedTransfer.receivedByName && (
+                <p className="text-sm text-slate-600">Confirmed by {selectedTransfer.receivedByName}</p>
+              )}
               {selectedTransfer.lines.map((line) => {
                 const editable = (selectedTransfer.status === 'Requested' && canDispatchSelected)
                   || (selectedTransfer.status === 'Dispatched' && canReceiveSelected);

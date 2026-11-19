@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSelector } from 'react-redux';
 import { ArrowUpRight, Check, Plus } from 'lucide-react';
 import { Badge, Button, Card, Input, Table } from '@/components/ui';
+import LocationReadFilter from '@/components/common/location-read-filter';
 import { approveGoodsReceive, getGoodsReceives, getLocations, getReceiveVendors } from '@/services/stock';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
@@ -24,6 +25,7 @@ export default function GoodsReceivesPage() {
   const canRead = can(permissions, 'stock:read');
   const canWrite = can(permissions, 'stock:write');
   const isSuperAdmin = user?.role === 'Super Admin';
+  const canSelectLocation = isSuperAdmin || Boolean(user?.canViewAllLocations);
   const [receives, setReceives] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -47,14 +49,10 @@ export default function GoodsReceivesPage() {
         if (!active) return;
         const userLocationId = String(user?.locationId?._id || user?.locationId || '');
         const availableLocations = locationResponse.data.locations.filter((location) => (
-          location.isActive !== false && (isSuperAdmin || location.id === userLocationId)
+          location.isActive !== false && (canSelectLocation || location.id === userLocationId)
         ));
         setLocations(availableLocations);
-        if (isSuperAdmin) {
-          setSelectedOutletId((current) => current || (
-            availableLocations.find(({ type }) => type === 'CENTRAL') || availableLocations[0]
-          )?.id || '');
-        }
+        setSelectedOutletId((current) => canSelectLocation ? current || 'all' : userLocationId);
         setVendors(vendorResponse.data.vendors);
         setLocationsLoaded(true);
       })
@@ -63,20 +61,20 @@ export default function GoodsReceivesPage() {
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, isSuperAdmin, token, user?.locationId]);
+  }, [canRead, canSelectLocation, initialized, token, user?.locationId]);
 
   useEffect(() => {
     if (!initialized || !token || !canRead || !locationsLoaded) return undefined;
     let active = true;
     setLoading(true);
-    getGoodsReceives(token, isSuperAdmin ? selectedOutletId : undefined)
+    getGoodsReceives(token, canSelectLocation && selectedOutletId !== 'all' ? selectedOutletId : undefined)
       .then((response) => active && setReceives(response.data.goodsReceives))
       .catch((requestError) => active && setError(
         requestError.response?.data?.message || 'Unable to load goods receives.',
       ))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [canRead, initialized, isSuperAdmin, locationsLoaded, selectedOutletId, token]);
+  }, [canRead, canSelectLocation, initialized, locationsLoaded, selectedOutletId, token]);
 
   const vendorNames = useMemo(
     () => new Map(vendors.map((vendor) => [vendor.id, vendor.name])),
@@ -123,7 +121,8 @@ export default function GoodsReceivesPage() {
       label: 'Actions',
       render: (_, receive) => (
         <div className="flex items-center gap-2">
-          {canWrite && receive.status === 'Draft' && (
+          {canWrite && receive.status === 'Draft'
+            && (isSuperAdmin || receive.warehouseId === String(user?.locationId?._id || user?.locationId || '')) && (
             <Button size="sm" onClick={() => approve(receive.id)} disabled={approvingId === receive.id}>
               <Check size={15} /> {approvingId === receive.id ? 'Approving...' : 'Approve'}
             </Button>
@@ -149,20 +148,15 @@ export default function GoodsReceivesPage() {
         </div>
         {canWrite && <Link href="/inventory/goods-receives/new" className="ui-button button-primary button-md"><Plus size={17} /> <T>{"New GRN"}</T></Link>}
       </div>
-      {isSuperAdmin && (
-        <div className="max-w-sm">
-          <label className="ui-label" htmlFor="grn-location"><T>{"Receive location"}</T></label>
-          <select
-            id="grn-location"
-            className="ui-input"
-            value={selectedOutletId}
-            onChange={(event) => setSelectedOutletId(event.target.value)}
-          >
-            {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-          </select>
-        </div>
-      )}
-      <Card title="Goods Receive Notes" description={`${receives.length} GRN${receives.length === 1 ? '' : 's'}${isSuperAdmin && locations.find((item) => item.id === selectedOutletId) ? ` at ${locations.find((item) => item.id === selectedOutletId).name}` : ''}`}>
+      <LocationReadFilter
+        label="Receive location"
+        locations={locations}
+        selectedOutletId={selectedOutletId}
+        onChange={(event) => setSelectedOutletId(event.target.value)}
+        canSelectLocation={canSelectLocation}
+        locationName={user?.location?.name}
+      />
+      <Card title="Goods Receive Notes" description={`${receives.length} GRN${receives.length === 1 ? '' : 's'}${canSelectLocation && selectedOutletId !== 'all' && locations.find((item) => item.id === selectedOutletId) ? ` at ${locations.find((item) => item.id === selectedOutletId).name}` : ''}`}>
         <div className="mb-4 max-w-sm">
           <Input label="Search GRNs" name="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Challan, vendor, or status" />
         </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Badge, Button, Card, Input, Select, Table } from '@/components/ui';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
 import useBarcodeScanner from '@/hooks/use-barcode-scanner';
 import {
   approveStockAdjustment, createStockAdjustment, getLocations, getStockAdjustments, rejectStockAdjustment,
@@ -11,12 +11,11 @@ import {
 import { stockText } from '@/services/stock-units.cjs';
 import { T } from '@/i18n/language-provider';
 import CameraBarcodeScanner from '@/components/common/camera-barcode-scanner';
+import StockAdjustmentsRegister from './stock-adjustments-register';
 import useToastMessages from '@/hooks/use-toast-messages';
 
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
 const recordId = (record) => String(record.id || record._id);
-const statusTone = { Approved: 'success', Pending: 'warning', Rejected: 'danger' };
-const money = (value) => new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT' }).format(Number(value) || 0);
 const reasons = ['Damaged', 'Expired', 'Lost or stolen', 'Found extra stock', 'Data entry correction', 'Other'];
 
 export default function StockAdjustmentsPage() {
@@ -26,9 +25,12 @@ export default function StockAdjustmentsPage() {
   const canWrite = can(permissions, 'stock:write');
   const canReadProducts = can(permissions, 'products:read');
   const isSuperAdmin = user?.role === 'Super Admin';
+  const canSelectRegisterLocation = isSuperAdmin || Boolean(user?.canViewAllLocations);
   const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
   const [adjustments, setAdjustments] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
+  const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [products, setProducts] = useState([]);
   const [matches, setMatches] = useState([]);
   const [warehouseId, setWarehouseId] = useState('');
@@ -52,25 +54,38 @@ export default function StockAdjustmentsPage() {
       return undefined;
     }
     let active = true;
-    Promise.all([
-      getLocations(token),
-      getStockAdjustments(token),
-    ])
-      .then(([locationResponse, adjustmentResponse]) => {
+    getLocations(token)
+      .then((locationResponse) => {
         if (!active) return;
         const availableLocations = locationResponse.data.locations.filter((item) => (
-          item.isActive !== false && (isSuperAdmin || item.id === assignedLocationId)
+          item.isActive !== false && (canSelectRegisterLocation || item.id === assignedLocationId)
         ));
         setLocations(availableLocations);
-        const defaultLocation = availableLocations.find((item) => item.id === assignedLocationId)
-          || availableLocations[0];
+        const defaultLocation = isSuperAdmin
+          ? availableLocations.find((item) => item.type === 'CENTRAL') || availableLocations[0]
+          : availableLocations.find((item) => item.id === assignedLocationId);
         setWarehouseId(defaultLocation?.id || '');
-        setAdjustments(adjustmentResponse.data.stockAdjustments);
+        setSelectedOutletId((current) => canSelectRegisterLocation ? current || 'all' : assignedLocationId);
+        setLocationsLoaded(true);
       })
       .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock adjustments.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [assignedLocationId, canRead, initialized, isSuperAdmin, permissions, token]);
+  }, [assignedLocationId, canRead, canSelectRegisterLocation, initialized, isSuperAdmin, token]);
+
+  useEffect(() => {
+    if (!initialized || !token || !canRead || !locationsLoaded) return undefined;
+    let active = true;
+    setLoading(true);
+    const params = canSelectRegisterLocation && selectedOutletId !== 'all'
+      ? { selectedOutletId }
+      : undefined;
+    getStockAdjustments(token, params)
+      .then((response) => active && setAdjustments(response.data.stockAdjustments))
+      .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock adjustments.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [canRead, canSelectRegisterLocation, initialized, locationsLoaded, selectedOutletId, token]);
 
   const productsById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const reasonMismatch = (
@@ -106,32 +121,6 @@ export default function StockAdjustmentsPage() {
       clearTimeout(timeout);
     };
   }, [canReadProducts, mode, search, token, warehouseId]);
-
-  const columns = [
-    {
-      key: '_id',
-      label: 'Adjustment',
-      render: (id, item) => <div><strong>{recordId(item).slice(-8).toUpperCase()}</strong><small className="block text-slate-500">{new Date(item.createdAt).toLocaleString()}</small></div>,
-    },
-    { key: 'warehouseId', label: 'Location', render: (id) => locations.find((item) => item.id === String(id))?.name || 'Location' },
-    { key: 'reason', label: 'Reason' },
-    { key: 'lines', label: 'Lines', render: (items) => items.map((line) => {
-      const product = productsById.get(String(line.productId));
-      return `${line.productName || product?.name || String(line.productId).slice(-6)} (${Number(line.quantity) > 0 ? '+' : ''}${line.quantity})`;
-    }).join(', ') },
-    { key: 'value', label: 'Value', render: money },
-    { key: 'status', label: 'Status', render: (status) => <Badge tone={statusTone[status] || 'neutral'}>{status}</Badge> },
-    {
-      key: 'actions',
-      label: 'Actions',
-      render: (_, item) => item.status === 'Pending' && user?.role === 'Super Admin' ? (
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => runDecision(item, true)}>Approve</Button>
-          <Button size="sm" variant="secondary" onClick={() => runDecision(item, false)}>Reject</Button>
-        </div>
-      ) : '—',
-    },
-  ];
 
   const addProduct = useCallback((product) => {
     setProducts((current) => current.some((item) => item.id === product.id)
@@ -252,7 +241,10 @@ export default function StockAdjustmentsPage() {
                   {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
                 </Select>
               ) : (
-                <Input label="Location" name="warehouseId" value={locations.find((item) => item.id === warehouseId)?.name || user?.location?.name || ''} readOnly />
+                <div className="space-y-2">
+                  <span className="block text-sm font-medium text-slate-700"><T>{"Location"}</T></span>
+                  <Badge tone="neutral">{user?.location?.name || locations.find((item) => item.id === warehouseId)?.name || 'No location assigned'}</Badge>
+                </div>
               )}
               <Select label="Adjustment mode" name="mode" value={mode} onChange={(event) => setMode(event.target.value)}>
                 <option value="REMOVE"><T>{"Remove stock"}</T></option>
@@ -305,9 +297,16 @@ export default function StockAdjustmentsPage() {
         </Card>
       )}
 
-      <Card title="Adjustment register" description={`${adjustments.length} adjustment${adjustments.length === 1 ? '' : 's'} in your location scope`}>
-        <Table columns={columns} rows={adjustments} rowKey="_id" emptyMessage="No stock adjustments yet." />
-      </Card>
+      <StockAdjustmentsRegister
+        adjustments={adjustments}
+        locations={locations}
+        productsById={productsById}
+        selectedOutletId={selectedOutletId}
+        canSelectLocation={canSelectRegisterLocation}
+        user={user}
+        onLocationChange={(event) => setSelectedOutletId(event.target.value)}
+        onDecision={runDecision}
+      />
     </section>
   );
 }

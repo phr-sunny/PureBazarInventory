@@ -1,12 +1,20 @@
 'use client';
 
-import { Select } from '@/components/ui';
+import { Badge, Select } from '@/components/ui';
 import { T } from '@/i18n/language-provider';
+import useAuth from '@/store/use-auth';
 
 export default function PosOutletSelector({
   isSuperAdmin, allowAll = false, outlets, selectedOutletId, onChange, loading, error,
 }) {
-  if (!isSuperAdmin) return null;
+  const { user } = useAuth();
+  if (!isSuperAdmin) {
+    return user?.location?.name ? (
+      <div className="w-full max-w-sm">
+        <Badge tone="neutral"><T>{"Location"}</T>: {user.location.name}</Badge>
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="w-full max-w-sm">

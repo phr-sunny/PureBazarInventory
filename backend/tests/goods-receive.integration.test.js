@@ -147,9 +147,13 @@ describe('goods receive and movement-derived stock endpoints', () => {
         then: (resolve, reject) => Promise.resolve(receive).then(resolve, reject),
       };
     });
-    GoodsReceive.find.mockReturnValue({
-      sort: jest.fn(() => ({ lean: jest.fn(async () => [...receives.values()]) })),
-    });
+    GoodsReceive.find.mockImplementation((filter = {}) => ({
+      sort: jest.fn(() => ({
+        lean: jest.fn(async () => [...receives.values()].filter((receive) => (
+          !filter.warehouseId || receive.warehouseId.toString() === filter.warehouseId.toString()
+        ))),
+      })),
+    }));
     StockMovement.create.mockImplementation(async (docs) => {
       movements.push(...docs);
       return docs;
@@ -309,7 +313,45 @@ describe('goods receive and movement-derived stock endpoints', () => {
       lines: [{ productId, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
     }).expect(404);
     await request(app).get('/api/goods-receives').set(auth).expect(200);
+    await request(app).get('/api/goods-receives?selectedOutletId=').set(auth).expect(200);
+    await request(app).get(`/api/goods-receives?selectedOutletId=${warehouseId}`).set(auth).expect(200);
     expect(GoodsReceive.find).toHaveBeenCalledWith({ warehouseId: outletId });
+  });
+
+  it('lets an all-location reader select another GRN location without widening writes', async () => {
+    const remoteReceive = newReceive({
+      ownerType: 'COMPANY',
+      warehouseId: outletId,
+      lines: [{ productId: new mongoose.Types.ObjectId(productId), receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
+      createdBy: adminId,
+    });
+    receives.set(remoteReceive._id.toString(), remoteReceive);
+    currentUser = {
+      ...admin,
+      roleId: {
+        name: 'Deputy',
+        permissions: ['stock:read', 'stock:write'],
+        canViewAllLocations: true,
+      },
+    };
+
+    const selected = await request(app).get('/api/goods-receives')
+      .query({ selectedOutletId: outletId }).set(auth);
+    const empty = await request(app).get('/api/goods-receives?selectedOutletId=').set(auth);
+    const created = await request(app).post('/api/goods-receives').set(auth).send({
+      ownerType: 'COMPANY',
+      warehouseId: outletId,
+      lines: [{ productId, receivedQuantity: 1, acceptedQuantity: 1, rejectedQuantity: 0 }],
+    });
+    const approved = await request(app).post(`/api/goods-receives/${remoteReceive._id}/approve`).set(auth);
+
+    expect(selected.status).toBe(200);
+    expect(selected.body.goodsReceives.map((item) => item.warehouseId)).toEqual([outletId]);
+    expect(empty.status).toBe(200);
+    expect(empty.body.goodsReceives).toHaveLength(1);
+    expect(created.status).toBe(201);
+    expect(created.body.goodsReceive.warehouseId).toBe(warehouseId);
+    expect(approved.status).toBe(404);
   });
 
   it('returns printable line details and keeps rejected receives out of stock', async () => {

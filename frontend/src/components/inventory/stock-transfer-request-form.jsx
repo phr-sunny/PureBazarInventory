@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Send } from 'lucide-react';
-import { Button, Card, Input, Select } from '@/components/ui';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
 import useBarcodeScanner from '@/hooks/use-barcode-scanner';
 import { searchReceiveProducts } from '@/services/stock';
 import { T } from '@/i18n/language-provider';
@@ -20,6 +20,7 @@ export default function StockTransferRequestForm({
   permissions,
   canChooseSource,
   sourceLocations,
+  locationName,
   outletLocations,
   sourceId,
   setSourceId,
@@ -142,10 +143,17 @@ export default function StockTransferRequestForm({
     <Card title="Request a transfer" description="Create an outlet stock request from the central warehouse.">
       <form className="space-y-4" onSubmit={submit}>
         <div className="grid gap-4 md:grid-cols-2">
-          <Select label="Source warehouse" name="sourceId" value={sourceId} disabled={!canChooseSource} onChange={changeSource}>
-            <option value=""><T>{"Choose a warehouse"}</T></option>
-            {sourceLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-          </Select>
+          {canChooseSource ? (
+            <Select label="Source warehouse" name="sourceId" value={sourceId} onChange={changeSource}>
+              <option value=""><T>{"Choose a warehouse"}</T></option>
+              {sourceLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </Select>
+          ) : (
+            <div className="space-y-2">
+              <span className="block text-sm font-medium text-slate-700"><T>{"Source warehouse"}</T></span>
+              <Badge tone="neutral">{locationName || sourceLocations.find((item) => item.id === sourceId)?.name || 'No location assigned'}</Badge>
+            </div>
+          )}
           <Select label="Destination outlet" name="outletId" value={outletId} onChange={(event) => setOutletId(event.target.value)}>
             <option value=""><T>{"Choose an outlet"}</T></option>
             {outletLocations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}

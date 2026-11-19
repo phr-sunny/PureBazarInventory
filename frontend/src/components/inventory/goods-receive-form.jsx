@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Search, Trash2 } from 'lucide-react';
 import { useSelector } from 'react-redux';
-import { Button, Card, Input, Select } from '@/components/ui';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
 import VendorCombobox from '@/components/inventory/vendor-combobox';
 import {
   createGoodsReceive, getLocations, getNextChallanNumber, getReceiveVendors, getWarehouseStock, searchReceiveProducts,
@@ -240,6 +240,12 @@ export default function GoodsReceiveForm() {
             >
               {locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </Select>
+          )}
+          {!isSuperAdmin && (
+            <div className="space-y-2">
+              <span className="block text-sm font-medium text-slate-700"><T>{"Receive location"}</T></span>
+              <Badge tone="neutral">{user?.location?.name || location?.name || 'No location assigned'}</Badge>
+            </div>
           )}
           <Select
             label="Purchase type"

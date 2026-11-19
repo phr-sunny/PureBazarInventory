@@ -22,10 +22,9 @@ async function listAdjustments(req, res, next) {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    if (hasGlobalStockAccess(req.user)) {
-      if (req.query.warehouseId) filter.warehouseId = req.query.warehouseId;
-    } else {
-      filter.warehouseId = req.locationId || req.user.locationId;
+    if (req.locationId) filter.warehouseId = req.locationId;
+    else if (!hasGlobalStockAccess(req.user) && !req.user.canViewAllLocations) {
+      filter.warehouseId = req.user.locationId;
     }
     const adjustments = await StockAdjustment.find(filter).sort({ createdAt: -1 }).lean();
     const productIds = [...new Set(adjustments.flatMap((adjustment) => (

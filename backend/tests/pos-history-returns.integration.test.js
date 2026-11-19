@@ -204,9 +204,11 @@ describe('POS history and returns API', () => {
     db.order.outlet = otherOutletId;
     const history = await request(app).get('/api/pos/history')
       .query({ selectedOutletId: otherOutletId.toString() }).set(auth());
+    const emptyLocation = await request(app).get('/api/pos/history?selectedOutletId=').set(auth());
     const returned = await request(app).post(`/api/pos/${orderId}/return`).set(auth()).send({});
 
     expect(history.status).toBe(200);
+    expect(emptyLocation.status).toBe(200);
     expect(history.body.orders).toEqual([]);
     expect(models.Order.find).toHaveBeenCalledWith(expect.objectContaining({ outlet: outletId }));
     expect(returned.status).toBe(403);
@@ -229,6 +231,11 @@ describe('POS history and returns API', () => {
     const all = await request(app).get('/api/pos/history').set(auth());
     expect(all.status).toBe(200);
     expect(models.Order.find).toHaveBeenCalledWith(expect.objectContaining({
+      outlet: { $in: [outletId, otherOutletId] },
+    }));
+    const emptyLocation = await request(app).get('/api/pos/history?selectedOutletId=').set(auth());
+    expect(emptyLocation.status).toBe(200);
+    expect(models.Order.find).toHaveBeenLastCalledWith(expect.objectContaining({
       outlet: { $in: [outletId, otherOutletId] },
     }));
 

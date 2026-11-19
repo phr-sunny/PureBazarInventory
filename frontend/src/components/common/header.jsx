@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ChevronDown, LogOut, Menu, Settings, UserRound } from 'lucide-react';
 import useAuth from '@/store/use-auth';
 import Button from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { getDashboardLocations } from '@/services/dashboard';
 const DASHBOARD_LOCATION_KEY = 'purebazar.dashboardLocationId';
 
 export default function Header({ section, onMenuClick }) {
+  const pathname = usePathname();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const wrapRef = useRef(null);
   const [logoutError, setLogoutError] = useState('');
@@ -82,7 +84,7 @@ export default function Header({ section, onMenuClick }) {
         </div>
       </div>
       <div className="header-actions">
-      {canViewAllLocations ? (
+      {canViewAllLocations && pathname === '/dashboard' ? (
         <>
           <label className="header-location">
             <span className="sr-only">{t('Dashboard location')}</span>

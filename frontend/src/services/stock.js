@@ -8,7 +8,10 @@ export const getLocations = (token, type) => api.get('/locations', {
   ...authConfig(token),
   params: type ? { type } : undefined,
 });
-export const getStockTransfers = (token) => api.get('/stock-transfers', authConfig(token));
+export const getStockTransfers = (token, selectedOutletId) => api.get('/stock-transfers', {
+  ...authConfig(token),
+  params: selectedOutletId && selectedOutletId !== 'all' ? { selectedOutletId } : undefined,
+});
 export const createStockTransfer = (token, payload) => api.post('/stock-transfers', payload, authConfig(token));
 export const dispatchStockTransfer = (token, id, payload) => api.post(`/stock-transfers/${id}/dispatch`, payload, authConfig(token));
 export const receiveStockTransfer = (token, id, payload) => api.post(`/stock-transfers/${id}/receive`, payload, authConfig(token));
@@ -44,7 +47,7 @@ export const searchReceiveProducts = (token, params) => api.get('/stock/products
 });
 export const getGoodsReceives = (token, selectedOutletId) => api.get('/goods-receives', {
   ...authConfig(token),
-  params: selectedOutletId ? { selectedOutletId } : undefined,
+  params: selectedOutletId && selectedOutletId !== 'all' ? { selectedOutletId } : undefined,
 });
 export const createGoodsReceive = (token, payload) => api.post('/goods-receives', payload, authConfig(token));
 export const approveGoodsReceive = (token, id) => api.post(`/goods-receives/${id}/approve`, {}, authConfig(token));

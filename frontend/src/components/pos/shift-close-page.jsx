@@ -49,8 +49,14 @@ export default function ShiftClosePage() {
   const { token, initialized, hasPermission } = useAuth();
   const { user } = useSelector((state) => state.auth);
   const {
-    isSuperAdmin, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
-  } = usePosOutlet();
+    isSuperAdmin, canSelectOutlet, outlets, selectedOutletId, setSelectedOutletId, loadingOutlets, outletError,
+  } = usePosOutlet({
+    allowLocationSelection: true,
+    defaultAssignedOutlet: true,
+    defaultFirstOutlet: true,
+  });
+  const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+  const canWriteSelectedOutlet = isSuperAdmin || selectedOutletId === assignedLocationId;
   const canRead = hasPermission('pos:read');
   const canWrite = hasPermission('pos:write');
   const [shift, setShift] = useState(null);
@@ -99,13 +105,19 @@ export default function ShiftClosePage() {
     setError('');
     setNotice('');
     try {
-      const { data } = await openPosShift({ openingCash: Number(openingCash) }, selectedOutletId);
+      const { data } = await openPosShift(
+        { openingCash: Number(openingCash) },
+        isSuperAdmin ? selectedOutletId : undefined,
+      );
       setShift(data.shift);
       setClosedShift(null);
       setClosedReport(null);
       setOpeningCash('');
       try {
-        const reportResponse = await getPosShiftReport(data.shift._id, selectedOutletId);
+        const reportResponse = await getPosShiftReport(
+          data.shift._id,
+          isSuperAdmin ? selectedOutletId : undefined,
+        );
         setReport(reportResponse.data.report);
         setNotice('Cashier shift opened.');
       } catch (reportError) {
@@ -126,7 +138,7 @@ export default function ShiftClosePage() {
     setNotice('');
     try {
       const { data } = await closePosShift(
-        shift._id, { actualCash: Number(actualCash) }, selectedOutletId,
+        shift._id, { actualCash: Number(actualCash) }, isSuperAdmin ? selectedOutletId : undefined,
       );
       setClosedShift(data.shift);
       setClosedReport(data.report);
@@ -153,7 +165,7 @@ export default function ShiftClosePage() {
         {closedShift && !shift && <Badge tone="neutral">Shift closed</Badge>}
       </header>
       <PosOutletSelector
-        isSuperAdmin={isSuperAdmin}
+        isSuperAdmin={canSelectOutlet}
         outlets={outlets}
         selectedOutletId={selectedOutletId}
         loading={loadingOutlets}
@@ -179,22 +191,22 @@ export default function ShiftClosePage() {
           )}
           {!shift && (
             <Card title="Open shift" description="Enter the cash float counted into the drawer at opening.">
-              {canWrite ? (
+              {canWrite && canWriteSelectedOutlet ? (
                 <form className="flex max-w-md flex-wrap items-end gap-3" onSubmit={handleOpen}>
                   <Input className="min-w-56 flex-1" label="Opening cash (৳)" type="number" min="0" step="0.01" required value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
                   <Button type="submit" disabled={saving}>{saving ? 'Opening…' : 'Open shift'}</Button>
                 </form>
-              ) : <p className="m-0 text-sm text-slate-500"><T>{"POS write permission is required to open a shift."}</T></p>}
+              ) : <p className="m-0 text-sm text-slate-500"><T>{canWrite ? "Shift writes are locked to your assigned outlet." : "POS write permission is required to open a shift."}</T></p>}
             </Card>
           )}
           {shift && (
             <Card title="Close shift" description="Count the cash drawer and compare it with expected cash before closing.">
-              {canWrite ? (
+              {canWrite && canWriteSelectedOutlet ? (
                 <form className="flex max-w-md flex-wrap items-end gap-3" onSubmit={handleClose}>
                   <Input className="min-w-56 flex-1" label="Actual cash counted (৳)" type="number" min="0" step="0.01" required value={actualCash} onChange={(event) => setActualCash(event.target.value)} />
                   <Button type="submit" disabled={saving}>{saving ? 'Closing…' : 'Close shift'}</Button>
                 </form>
-              ) : <p className="m-0 text-sm text-slate-500"><T>{"POS write permission is required to close a shift."}</T></p>}
+              ) : <p className="m-0 text-sm text-slate-500"><T>{canWrite ? "Shift writes are locked to your assigned outlet." : "POS write permission is required to close a shift."}</T></p>}
             </Card>
           )}
         </>

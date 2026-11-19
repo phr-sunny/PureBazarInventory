@@ -12,6 +12,7 @@ import {
   createStockCount, getLocations, getStockCounts, getWarehouseStock, postStockCount,
 } from '@/services/stock';
 import { T } from '@/i18n/language-provider';
+import LocationReadFilter from '@/components/common/location-read-filter';
 
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
 const recordId = (record) => String(record.id || record._id);
@@ -31,13 +32,16 @@ export default function StockCountsPage() {
   const canWrite = can(permissions, 'stock:write');
   const isSuperAdmin = user?.role === 'Super Admin';
   const assignedLocationId = String(user?.locationId?._id || user?.locationId || '');
+  const canSelectRegisterLocation = isSuperAdmin || Boolean(user?.canViewAllLocations);
   const canChooseLocation = isSuperAdmin || user?.location?.type === 'CENTRAL';
   const [counts, setCounts] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
   const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
   const [stockLoading, setStockLoading] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
+  const [selectedOutletId, setSelectedOutletId] = useState('all');
   const [reason, setReason] = useState('');
   const [search, setSearch] = useState('');
   const [countLines, setCountLines] = useState([]);
@@ -56,27 +60,41 @@ export default function StockCountsPage() {
     let active = true;
     Promise.all([
       getLocations(token),
-      getStockCounts(token),
       can(permissions, 'products:read') ? getProducts(token) : Promise.resolve(null),
     ])
-      .then(([locationResponse, countResponse, productResponse]) => {
+      .then(([locationResponse, productResponse]) => {
         if (!active) return;
         const availableLocations = locationResponse.data.locations.filter((item) => (
           item.isActive !== false
-          && (canChooseLocation || item.id === assignedLocationId)
+          && (canSelectRegisterLocation || canChooseLocation || item.id === assignedLocationId)
         ));
         setLocations(availableLocations);
-        const defaultLocation = availableLocations.find((item) => item.id === assignedLocationId)
-          || availableLocations.find((item) => item.type === 'CENTRAL')
-          || availableLocations[0];
+        const defaultLocation = isSuperAdmin
+          ? availableLocations.find((item) => item.type === 'CENTRAL') || availableLocations[0]
+          : availableLocations.find((item) => item.id === assignedLocationId);
         setWarehouseId(defaultLocation?.id || '');
-        setCounts(countResponse.data.stockCounts);
+        setSelectedOutletId((current) => canSelectRegisterLocation ? current || 'all' : assignedLocationId);
         setProducts(productResponse?.data.products || []);
+        setLocationsLoaded(true);
       })
       .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock count data.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [assignedLocationId, canChooseLocation, canRead, initialized, permissions, token]);
+  }, [assignedLocationId, canChooseLocation, canRead, canSelectRegisterLocation, initialized, isSuperAdmin, permissions, token]);
+
+  useEffect(() => {
+    if (!initialized || !token || !canRead || !locationsLoaded) return undefined;
+    let active = true;
+    setLoading(true);
+    const params = canSelectRegisterLocation && selectedOutletId !== 'all'
+      ? { selectedOutletId }
+      : undefined;
+    getStockCounts(token, params)
+      .then((response) => active && setCounts(response.data.stockCounts))
+      .catch((requestError) => active && setError(requestError.response?.data?.message || 'Unable to load stock counts.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [canRead, canSelectRegisterLocation, initialized, locationsLoaded, selectedOutletId, token]);
 
   useEffect(() => {
     if (!token || !warehouseId) {
@@ -190,6 +208,7 @@ export default function StockCountsPage() {
       key: 'actions',
       label: 'Actions',
       render: (_, count) => count.status === 'Counting' && canWrite
+        && (isSuperAdmin || user?.location?.type === 'CENTRAL' || String(count.warehouseId) === assignedLocationId)
         ? <Button size="sm" onClick={() => postCount(count)}>Post count</Button>
         : count.status === 'PendingApproval' ? 'Awaiting approval' : '—',
     },
@@ -215,7 +234,10 @@ export default function StockCountsPage() {
                   {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
                 </Select>
               ) : (
-                <Input label="Outlet" name="warehouseId" value={locations.find((item) => item.id === warehouseId)?.name || user?.location?.name || ''} readOnly />
+                <div className="space-y-2">
+                  <span className="block text-sm font-medium text-slate-700"><T>{"Location"}</T></span>
+                  <Badge tone="neutral">{user?.location?.name || locations.find((item) => item.id === warehouseId)?.name || 'No location assigned'}</Badge>
+                </div>
               )}
               <Input label="Count reason" name="reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} required placeholder="e.g. Monthly inventory count" />
             </div>
@@ -255,7 +277,16 @@ export default function StockCountsPage() {
           </form>
         </Card>
       )}
-      <Card title="Count register" description={`${counts.length} count${counts.length === 1 ? '' : 's'} in your location scope`}>
+      <Card title="Count register" description={`${counts.length} count${counts.length === 1 ? '' : 's'} ${canSelectRegisterLocation && selectedOutletId === 'all' ? 'across all locations' : 'in your location scope'}`}>
+        <div className="mb-4">
+          <LocationReadFilter
+            locations={locations}
+            selectedOutletId={selectedOutletId}
+            onChange={(event) => setSelectedOutletId(event.target.value)}
+            canSelectLocation={canSelectRegisterLocation}
+            locationName={user?.location?.name}
+          />
+        </div>
         <Table columns={columns} rows={counts} rowKey="_id" emptyMessage="No stock counts yet." />
       </Card>
       {counts.filter((count) => count.lines?.length).map((count) => (

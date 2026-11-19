@@ -10,15 +10,9 @@ async function listCounts(req, res, next) {
   try {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
-    if (hasGlobalStockAccess(req.user)) {
-      if (req.query.warehouseId) filter.warehouseId = req.locationId;
-    } else if (req.locationType === 'CENTRAL') {
-      if (req.query.warehouseId) filter.warehouseId = req.locationId;
-      else {
-        const activeLocations = await Location.find({ isActive: { $ne: false } }).select('_id').lean();
-        filter.warehouseId = { $in: activeLocations.map(({ _id }) => _id) };
-      }
-    } else {
+    if (hasGlobalStockAccess(req.user) || req.user.canViewAllLocations) {
+      if (req.locationId) filter.warehouseId = req.locationId;
+    } else if (req.locationId) {
       filter.warehouseId = req.locationId;
     }
     const counts = await StockCount.find(filter).sort({ createdAt: -1 }).lean();

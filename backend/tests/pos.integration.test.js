@@ -371,6 +371,23 @@ describe('POS checkout API', () => {
     expect(stockWarehouseId.toString()).toBe(outletId.toString());
   });
 
+  it('keeps sales by an all-location reader at the assigned outlet', async () => {
+    const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000007');
+    user.roleId.canViewAllLocations = true;
+    const response = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: otherOutletId.toString() })
+      .set(auth())
+      .send({
+        items: line(),
+        payments: [{ method: 'CASH', amount: 100 }],
+        outletId: otherOutletId.toString(),
+      });
+
+    expect(response.status).toBe(201);
+    expect(db.orders[0].outlet.toString()).toBe(outletId.toString());
+    expect(db.movements.at(-1).warehouseId.toString()).toBe(outletId.toString());
+  });
+
   it('uses the selected Super Admin outlet and package stock when selling pieces', async () => {
     const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000007');
     const monas = {
