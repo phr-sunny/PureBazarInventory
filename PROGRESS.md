@@ -700,3 +700,8 @@
 	- Files: location-scope middleware and stock helpers/controllers/routes; location-filtered transfer workflow; stock count and adjustment screens; Central Warehouse Stock scope; new Outlet Inventory API/screen and navigation; optional product SKU support; role permission mapping; integration tests.
 	- Decisions: outlet users remain locked to their assigned location; central users may view active locations and create/post counts there, while adjustments, GRNs, transfers, and POS remain location-locked. Transfer reads/actions are restricted to source/destination locations. All stock totals and count differences use StockMovement rows by warehouseId; count posting audit metadata records postedBy and warehouseId.
 	- Validation: backend Jest passes (44 suites, 279 tests); frontend production build passes. Frontend tests remain 28/29 due to nine pre-existing untranslated UI literals outside this change.
+
+- [x] P3 fix Super Admin POS checkout
+	- Files: POS checkout stock query and integration tests.
+	- Decisions: cast the checkout warehouseId to ObjectId to match StockMovement storage and the POS availability query; keep Super Admin outlet selection in the selectedOutletId query parameter consumed by scope middleware; keep locked cashier scope unchanged. Stock errors identify the product and show available package/piece quantity.
+	- Validation: backend Jest passes (46 suites, 323 tests); frontend production build passes. Frontend tests remain 28/29 due to nine pre-existing untranslated UI literals unrelated to this change.

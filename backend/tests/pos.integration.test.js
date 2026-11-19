@@ -120,7 +120,8 @@ describe('POS checkout API', () => {
       session: jest.fn(async () => {
         const filter = pipeline[0].$match;
         const available = db.movements
-          .filter((movement) => movement.warehouseId.toString() === filter.warehouseId.toString())
+          .filter((movement) => filter.warehouseId instanceof mongoose.Types.ObjectId
+            && movement.warehouseId.toString() === filter.warehouseId.toString())
           .reduce((sum, movement) => sum + movement.quantity, 0);
         return available ? [{ _id: productId, quantity: available }] : [];
       }),
@@ -348,13 +349,16 @@ describe('POS checkout API', () => {
     expect(db.discounts[0]).toMatchObject({ amount: 10, reason: 'Offer' });
   });
 
-  it('ignores a client outletId and uses only the assigned outlet for order, stock, and ledger', async () => {
+  it('ignores client outlet selections and uses only the assigned outlet for order, stock, and ledger', async () => {
     const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000007');
-    const response = await checkout({
-      items: line(),
-      payments: [{ method: 'CASH', amount: 100 }],
-      outletId: otherOutletId.toString(),
-    });
+    const response = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: otherOutletId.toString() })
+      .set(auth())
+      .send({
+        items: line(),
+        payments: [{ method: 'CASH', amount: 100 }],
+        outletId: otherOutletId.toString(),
+      });
 
     expect(response.status).toBe(201);
     expect(db.orders[0].outlet.toString()).toBe(outletId.toString());
@@ -362,8 +366,92 @@ describe('POS checkout API', () => {
       warehouseId: outletId, quantity: -1, type: 'SALE',
     });
     expect(db.ledgers[0].locationId.toString()).toBe(outletId.toString());
-    expect(models.StockMovement.aggregate.mock.calls.at(-1)[0][0].$match.warehouseId.toString())
-      .toBe(outletId.toString());
+    const stockWarehouseId = models.StockMovement.aggregate.mock.calls.at(-1)[0][0].$match.warehouseId;
+    expect(stockWarehouseId).toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(stockWarehouseId.toString()).toBe(outletId.toString());
+  });
+
+  it('uses the selected Super Admin outlet and package stock when selling pieces', async () => {
+    const otherOutletId = new mongoose.Types.ObjectId('65b000000000000000000007');
+    const monas = {
+      ...product, name: 'Monas-10', unitValue: 1, unitsPerPackage: 100,
+    };
+    user = {
+      ...user, _id: adminId, locationId: null,
+      roleId: { name: 'Super Admin', permissions: ['*'] },
+    };
+    models.Product.find.mockReturnValue(query([monas]));
+    db.movements = [
+      { productId, warehouseId: outletId, quantity: 1.7, type: 'GRN' },
+      { productId, warehouseId: otherOutletId, quantity: 25, type: 'GRN' },
+    ];
+
+    const response = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: outletId.toString() })
+      .set(auth())
+      .send({
+        items: [{ productId: productId.toString(), quantity: 10, unit: 'PIECE' }],
+        payments: [{ method: 'CASH', amount: 10 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(db.orders[0].outlet.toString()).toBe(outletId.toString());
+    expect(db.movements.at(-1)).toMatchObject({ quantity: -0.1, type: 'SALE' });
+    expect(db.movements.at(-1).warehouseId.toString()).toBe(outletId.toString());
+    expect(db.movements
+      .filter((movement) => movement.warehouseId.toString() === outletId.toString())
+      .reduce((sum, movement) => sum + movement.quantity, 0)).toBeCloseTo(1.6);
+    expect(db.movements
+      .filter((movement) => movement.warehouseId.toString() === otherOutletId.toString())
+      .reduce((sum, movement) => sum + movement.quantity, 0)).toBe(25);
+    const stockWarehouseId = models.StockMovement.aggregate.mock.calls.at(-1)[0][0].$match.warehouseId;
+    expect(stockWarehouseId).toBeInstanceOf(mongoose.Types.ObjectId);
+    expect(stockWarehouseId.toString()).toBe(outletId.toString());
+  });
+
+  it('sells one package from Super Admin-selected outlet stock', async () => {
+    const monas = { ...product, name: 'Monas-10', unitValue: 1, unitsPerPackage: 100 };
+    user = {
+      ...user, _id: adminId, locationId: null,
+      roleId: { name: 'Super Admin', permissions: ['*'] },
+    };
+    models.Product.find.mockReturnValue(query([monas]));
+    db.movements = [{ productId, warehouseId: outletId, quantity: 1.7, type: 'GRN' }];
+
+    const response = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: outletId.toString() })
+      .set(auth())
+      .send({
+        items: [{ productId: productId.toString(), quantity: 1, unit: 'PACKAGE' }],
+        payments: [{ method: 'CASH', amount: 100 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(db.movements.at(-1)).toMatchObject({ quantity: -1, type: 'SALE' });
+    expect(db.movements.at(-1).warehouseId.toString()).toBe(outletId.toString());
+  });
+
+  it('reports readable available stock when a Super Admin oversells pieces', async () => {
+    const monas = { ...product, name: 'Monas-10', unitValue: 1, unitsPerPackage: 100 };
+    user = {
+      ...user, _id: adminId, locationId: null,
+      roleId: { name: 'Super Admin', permissions: ['*'] },
+    };
+    models.Product.find.mockReturnValue(query([monas]));
+    db.movements = [{ productId, warehouseId: outletId, quantity: 1.7, type: 'GRN' }];
+
+    const response = await request(app).post('/api/pos/checkout')
+      .query({ selectedOutletId: outletId.toString() })
+      .set(auth())
+      .send({
+        items: [{ productId: productId.toString(), quantity: 171, unit: 'PIECE' }],
+        payments: [{ method: 'CASH', amount: 171 }],
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe('Insufficient outlet stock for Monas-10. Available: 1 Box and 70 Pcs');
+    expect(db.orders).toHaveLength(0);
+    expect(db.movements).toHaveLength(1);
   });
 
   it('requires a Super Admin to select an outlet for POS', async () => {

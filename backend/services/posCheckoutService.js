@@ -14,6 +14,20 @@ function money(value) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function formatAvailableStock(quantity, product, packageUnitName) {
+  const unitsPerPackage = Number(product.unitsPerPackage);
+  if (!Number.isInteger(unitsPerPackage) || unitsPerPackage <= 1) {
+    return `${quantity} ${packageUnitName || 'Box'}`;
+  }
+  const totalPieces = Math.max(0, Math.round(quantity * unitsPerPackage));
+  const packages = Math.floor(totalPieces / unitsPerPackage);
+  const pieces = totalPieces % unitsPerPackage;
+  const parts = [];
+  if (packages || !pieces) parts.push(`${packages} ${packageUnitName || 'Box'}`);
+  if (pieces) parts.push(`${pieces} Pcs`);
+  return parts.join(' and ');
+}
+
 function objectOf(value) {
   return value?.toObject ? value.toObject() : value;
 }
@@ -114,7 +128,7 @@ async function commitBill(req, res, next, offline) {
       const stock = await StockMovement.aggregate([
         {
           $match: {
-            warehouseId: outletId,
+            warehouseId: new mongoose.Types.ObjectId(String(outletId)),
             productId: { $in: [...quantities.keys()].map((id) => new mongoose.Types.ObjectId(id)) },
           },
         },
@@ -123,8 +137,15 @@ async function commitBill(req, res, next, offline) {
       const available = new Map(stock.map((item) => [item._id.toString(), item.quantity]));
       for (const [productId, quantity] of quantities) {
         // Tolerance absorbs floating point drift from fractional box deductions.
-        if ((available.get(productId) || 0) + 1e-9 < quantity) {
-          throw statusError(`Insufficient outlet stock for product ${productId}`, 409);
+        const availableQuantity = available.get(productId) || 0;
+        if (availableQuantity + 1e-9 < quantity) {
+          const product = result.lines.find(({ item }) => item.productId === productId)?.product;
+          const { packageUnitName } = displayFields(product, unitLabels);
+          const availableText = formatAvailableStock(availableQuantity, product, packageUnitName);
+          throw statusError(
+            `Insufficient outlet stock for ${product.name}. Available: ${availableText}`,
+            409,
+          );
         }
       }
       const [created] = await Order.create([{
