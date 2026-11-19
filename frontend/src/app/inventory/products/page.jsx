@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import useToastMessages from '@/hooks/use-toast-messages';
-import { Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { Badge, Button, Input, Table } from '@/components/ui';
 import ProductFormModal from '@/components/inventory/product-form-modal';
-import { createProduct, getProducts } from '@/services/inventory';
+import ProductEditModal from '@/components/inventory/product-edit-modal';
+import { createProduct, getProducts, updateProduct } from '@/services/inventory';
 import { getVendors } from '@/services/vendor';
 import { T } from '@/i18n/language-provider';
 import CameraBarcodeScanner from '@/components/common/camera-barcode-scanner';
@@ -43,9 +44,19 @@ export default function ProductsPage() {
   const [vendors, setVendors] = useState([]);
   const [vendorFilter, setVendorFilter] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
   const permissions = user?.permissions || [];
   const canRead = permissions.includes('*') || permissions.includes('products:read');
   const canWrite = permissions.includes('*') || permissions.includes('products:write');
+  const tableColumns = canWrite ? [...columns, {
+    key: 'actions',
+    label: 'Actions',
+    render: (_, product) => (
+      <Button size="sm" variant="secondary" onClick={() => setEditingProduct(product)}>
+        <Pencil size={14} /> Edit
+      </Button>
+    ),
+  }] : columns;
 
   useEffect(() => {
     if (!initialized) return undefined;
@@ -93,6 +104,16 @@ export default function ProductsPage() {
     setTimeout(() => setNotice('Product created successfully.'), 0);
   }
 
+  async function saveProduct(productId, payload) {
+    setError('');
+    setNotice('');
+    const { data } = await updateProduct(token, productId, payload);
+    setProducts((current) => current.map((product) => (
+      product.id === productId ? data.product : product
+    )));
+    setNotice('Product updated successfully.');
+  }
+
   if (!initialized || loading) return <p role="status" className="py-10 text-center text-sm text-slate-500"><T>{"Loading products..."}</T></p>;
   if (!token || !canRead) return <p role="alert" className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><T>{"You do not have permission to view products."}</T></p>;
 
@@ -132,7 +153,7 @@ export default function ProductsPage() {
           </datalist>
         </label>
       </div>
-      <Table columns={columns} rows={visibleProducts} rowKey="id" emptyMessage={search || vendorFilter ? 'No products match your filters.' : 'No products found.'} />
+      <Table columns={tableColumns} rows={visibleProducts} rowKey="id" emptyMessage={search || vendorFilter ? 'No products match your filters.' : 'No products found.'} />
 
       {canWrite && (
         <ProductFormModal
@@ -142,6 +163,16 @@ export default function ProductsPage() {
           token={token}
           permissions={permissions}
           marginWarningPercent={marginWarningPercent}
+        />
+      )}
+      {canWrite && (
+        <ProductEditModal
+          open={Boolean(editingProduct)}
+          onClose={() => setEditingProduct(null)}
+          onSubmit={saveProduct}
+          product={editingProduct}
+          token={token}
+          permissions={permissions}
         />
       )}
     </section>

@@ -150,6 +150,9 @@ async function updateProduct(req, res, next) {
       Object.prototype.hasOwnProperty.call(input, field) && input[field] !== product[field]
     ));
     const nextValues = { ...productData(product), ...input };
+    if (Number(nextValues.mrp) < Number(nextValues.vendorPrice)) {
+      throw statusError('MRP must be greater than or equal to vendor price', 400);
+    }
     await validateReferences(nextValues);
     product.set(input);
     await product.save();

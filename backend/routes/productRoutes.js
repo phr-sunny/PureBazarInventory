@@ -34,6 +34,9 @@ const pieceRules = [
   body('subUnitPriceOverride').optional({ nullable: true }).isFloat({ min: 0 }).toFloat()
     .withMessage('subUnitPriceOverride must be zero or greater'),
 ];
+const rejectStockUpdate = body().custom((value) => (
+  !Object.keys(value || {}).some((field) => /stock|quantity/i.test(field))
+)).withMessage('Stock quantities cannot be changed through product updates');
 
 router.get('/', read, productsController.listProducts);
 router.post('/', write, [
@@ -48,6 +51,7 @@ router.post('/', write, [
 router.get('/:id', read, [id], validateRequest, productsController.getProduct);
 router.put('/:id', write, [
   id,
+  rejectStockUpdate,
   body('name').optional().isString().trim().isLength({ min: 1, max: 150 })
     .withMessage('Name must be 1 to 150 characters'),
   sku,

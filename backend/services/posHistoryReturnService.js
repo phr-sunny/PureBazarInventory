@@ -75,7 +75,11 @@ async function listSalesHistory(req) {
   if (dates) clauses.push(dates);
   if (clauses.length) filter.$and = clauses;
 
-  const orders = await Order.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+  const orders = await Order.find(filter)
+    .populate('cashier', 'name')
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
   const missing = orders.flatMap((order) => order.lines).filter((line) => !line.packageUnitName);
   if (!missing.length) return orders;
   const products = await Product.find({ _id: { $in: missing.map((line) => line.productId) } }).select('unitId').lean();

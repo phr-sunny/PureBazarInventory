@@ -11,11 +11,12 @@ jest.mock('../models', () => ({
   StockAdjustment: { create: jest.fn(), find: jest.fn(), findById: jest.fn() },
   StockCount: { create: jest.fn(), find: jest.fn(), findById: jest.fn() },
   StockMovement: { aggregate: jest.fn(), create: jest.fn() },
+  Unit: { find: jest.fn() },
   User: { findById: jest.fn() },
 }));
 
 const {
-  AuditLog, Location, Product, Settings, StockAdjustment, StockCount, StockMovement, User,
+  AuditLog, Location, Product, Settings, StockAdjustment, StockCount, StockMovement, Unit, User,
 } = require('../models');
 const stockRoutes = require('../routes/stockRoutes');
 const errorMiddleware = require('../middlewares/errorMiddleware');
@@ -26,6 +27,7 @@ const ids = {
   warehouse: '65b000000000000000000001',
   outlet: '65b000000000000000000005',
   otherOutlet: '65b000000000000000000006',
+  unit: '65b000000000000000000007',
   manager: '65b000000000000000000002',
   admin: '65b000000000000000000003',
   product: '65b000000000000000000004',
@@ -40,6 +42,8 @@ const product = {
   name: 'Sample Product',
   sku: 'SAMPLE-001',
   barcode: '1234567890123',
+  unitId: new mongoose.Types.ObjectId('65b000000000000000000007'),
+  unitsPerPackage: 100,
   vendorPrice: 20,
 };
 
@@ -130,6 +134,13 @@ describe('stock adjustment and count API', () => {
         ? [product].filter(({ _id }) => filter._id.$in.some((id) => id.toString() === _id.toString()))
         : [product],
     ));
+    Unit.find.mockReturnValue({
+      select: jest.fn(() => ({
+        lean: jest.fn().mockResolvedValue([{
+          _id: new mongoose.Types.ObjectId(ids.unit), name: 'Box', abbreviation: 'Box',
+        }]),
+      })),
+    });
     Settings.findOne.mockReturnValue(query({ stockAdjustmentApprovalLimit: 100 }));
     AuditLog.create.mockImplementation(async (logs) => { auditLogs.push(...logs); return logs; });
     StockMovement.aggregate.mockImplementation((pipeline) => {
@@ -544,6 +555,42 @@ describe('stock adjustment and count API', () => {
     expect(response.status).toBe(409);
     expect(response.body.message).toBe('Cannot remove more stock than is currently available at this location');
     expect(stockAt(ids.warehouse, ids.product)).toBe(23);
+    expect(adjustments.size).toBe(0);
+  });
+
+  it('removes 10 pieces from 90 pieces using the fractional package quantity', async () => {
+    movements[0].quantity = 0.9;
+    Settings.findOne.mockReturnValue(query({ stockAdjustmentApprovalLimit: 1000 }));
+
+    const response = await request(app).post('/api/stock-adjustments').set(auth()).send({
+      warehouseId: ids.warehouse,
+      mode: 'REMOVE',
+      reason: 'Expired',
+      lines: [{ productId: ids.product, quantity: 0.1 }],
+    });
+
+    expect(response.status).toBe(201);
+    expect(stockAt(ids.warehouse, ids.product)).toBeCloseTo(0.8);
+    expect(movements[movements.length - 1].quantity).toBeCloseTo(-0.1);
+    const register = await request(app).get('/api/stock-adjustments').set(auth());
+    expect(register.body.stockAdjustments[0].lines[0]).toMatchObject({
+      quantity: -0.1, unitsPerPackage: 100, packageUnitName: 'Box',
+    });
+  });
+
+  it('rejects removing one 100-piece box from 90 pieces', async () => {
+    movements[0].quantity = 0.9;
+
+    const response = await request(app).post('/api/stock-adjustments').set(auth()).send({
+      warehouseId: ids.warehouse,
+      mode: 'REMOVE',
+      reason: 'Expired',
+      lines: [{ productId: ids.product, quantity: 1 }],
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/cannot remove more stock than is currently available/i);
+    expect(stockAt(ids.warehouse, ids.product)).toBeCloseTo(0.9);
     expect(adjustments.size).toBe(0);
   });
 

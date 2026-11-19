@@ -31,3 +31,4 @@ export const deleteUnit = (token, id) => api.delete(`${resourceApi('units')}/${i
 export const searchVendors = (token, q) => api.get(resourceApi('vendors'), { ...authConfig(token), params: { q, status: 'Active' } });
 export const getProducts = (token) => api.get(resourceApi('products'), authConfig(token));
 export const createProduct = (token, payload) => api.post(resourceApi('products'), payload, authConfig(token));
+export const updateProduct = (token, id, payload) => api.put(`${resourceApi('products')}/${id}`, payload, authConfig(token));

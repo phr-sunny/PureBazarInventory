@@ -120,7 +120,7 @@ async function searchProducts(req, res, next) {
         filter._id = { $in: grouped.filter(({ quantity }) => quantity > 0).map(({ _id }) => _id) };
       }
     }
-    let productQuery = Product.find(filter)    .select('_id name unitId barcode ownerType vendorId')
+    let productQuery = Product.find(filter).select('_id name unitId unitsPerPackage barcode ownerType vendorId')
       .sort({ name: 1 });
     if (warehouseId) productQuery = productQuery.limit(Math.min(Number(req.query.limit) || 10, 10));
     const products = await productQuery.lean();
@@ -131,6 +131,7 @@ async function searchProducts(req, res, next) {
         id: product._id.toString(),
         name: product.name,
         ...displayFields(product, labels),
+        unitsPerPackage: product.unitsPerPackage || 1,
         isWeightBased: /^(gram|grams|g)$/i.test(String(labels.names.get(product.unitId?.toString()) || '').trim()),
         barcode: product.barcode,
         ownerType: product.ownerType,

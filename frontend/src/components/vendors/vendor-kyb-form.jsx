@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Button, Card, Input, Select } from '@/components/ui';
 import { submitVendorKyb } from '@/services/vendor';
 import {
@@ -43,8 +43,8 @@ export default function VendorKybForm() {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [submitted, setSubmitted] = useState(null);
-  useToastMessages({ error });
+  const [notice, setNotice] = useState('');
+  useToastMessages({ success: notice, error });
 
   const setField = (name, value) => {
     setForm((current) => ({ ...current, [name]: value }));
@@ -68,6 +68,7 @@ export default function VendorKybForm() {
   async function submit(event) {
     event.preventDefault();
     setError('');
+    setNotice('');
     const all = validateKybForm(form, files);
     setErrors(all);
     if (Object.keys(all).length) {
@@ -78,7 +79,7 @@ export default function VendorKybForm() {
     setSaving(true);
     try {
       const { data } = await submitVendorKyb(token, buildKybPayload(form), files);
-      setSubmitted(data.registration);
+      setNotice(`${data.registration.businessLegalIdentity?.companyName || 'Vendor registration'} was submitted for verification (PENDING).`);
       setForm(emptyKybForm);
       setFiles({ tradeLicense: null, ownerNid: null });
       setStep(0);
@@ -114,12 +115,6 @@ export default function VendorKybForm() {
           </li>
         ))}
       </ol>
-
-      {submitted && (
-        <p role="status" className="flex items-center gap-2 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          <CheckCircle2 size={18} /> {submitted.businessLegalIdentity?.companyName} was submitted for verification (PENDING).
-        </p>
-      )}
 
       <form onSubmit={submit} noValidate className="space-y-5">
         {step === 0 && (

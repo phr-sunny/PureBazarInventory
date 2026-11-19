@@ -177,6 +177,35 @@ describe('product endpoints', () => {
     }));
   });
 
+  it('rejects attempts to set stock quantity through product updates', async () => {
+    const response = await request(app).put(`/api/products/${productId}`).set(auth)
+      .send({ stockQuantity: 500 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/stock quantities cannot be changed/i) }),
+    ]));
+    expect(Product.findById).not.toHaveBeenCalled();
+  });
+
+  it('rejects vendor-price changes that would leave MRP below vendor price', async () => {
+    const current = {
+      ...product,
+      set: jest.fn(),
+      save: jest.fn(),
+    };
+    Product.findById.mockReturnValue(current);
+
+    const response = await request(app).put(`/api/products/${productId}`).set(auth)
+      .send({ vendorPrice: 101 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/MRP must be greater than or equal to vendor price/i);
+    expect(current.set).not.toHaveBeenCalled();
+    expect(current.save).not.toHaveBeenCalled();
+    expect(PriceHistory.create).not.toHaveBeenCalled();
+  });
+
   it('denies cashiers permission to change prices', async () => {
     User.findById.mockReturnValue({ populate: jest.fn().mockResolvedValue({
       ...admin, roleId: { name: 'Outlet Cashier', permissions: ['pos:write'] },

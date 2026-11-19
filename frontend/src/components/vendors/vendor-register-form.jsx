@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Button, Card, Input, Select } from '@/components/ui';
 import { getCurrentVendorTerms, registerVendor } from '@/services/vendor';
 import { T } from '@/i18n/language-provider';
@@ -42,8 +42,8 @@ export default function VendorRegisterForm() {
   const [accepted, setAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  useToastMessages({ error });
-  const [registered, setRegistered] = useState(null);
+  const [notice, setNotice] = useState('');
+  useToastMessages({ success: notice, error });
 
   useEffect(() => {
     if (!token) return undefined;
@@ -64,13 +64,13 @@ export default function VendorRegisterForm() {
     setForm((current) => ({ ...current, [name]: value }));
     setAccepted(false);
     setError('');
-    setRegistered(null);
+    setNotice('');
   }
 
   async function submit(event) {
     event.preventDefault();
     setError('');
-    setRegistered(null);
+    setNotice('');
     if (!terms) {
       setError('Registration is unavailable until current vendor terms are configured.');
       return;
@@ -87,7 +87,7 @@ export default function VendorRegisterForm() {
         termsAccepted: true,
         termsVersion: terms.version,
       });
-      setRegistered(data.vendor);
+      setNotice(`${data.vendor.name} was registered as a vendor.`);
       setForm(emptyForm);
       setAccepted(false);
     } catch (requestError) {
@@ -118,12 +118,6 @@ export default function VendorRegisterForm() {
           </Link>
         )}
       </div>
-
-      {registered && (
-        <p role="status" className="flex items-center gap-2 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          <CheckCircle2 size={18} /> {registered.name} was registered as a vendor.
-        </p>
-      )}
 
       <Card title="Vendor registration details" description="Member eligibility is verified by the server when this form is submitted.">
         <form className="space-y-5" onSubmit={submit}>

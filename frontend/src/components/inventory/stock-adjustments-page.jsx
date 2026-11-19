@@ -2,21 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Badge, Button, Card, Input, Select } from '@/components/ui';
+import { Button, Card } from '@/components/ui';
 import useBarcodeScanner from '@/hooks/use-barcode-scanner';
-import {
-  approveStockAdjustment, createStockAdjustment, getLocations, getStockAdjustments, rejectStockAdjustment,
-  searchReceiveProducts,
-} from '@/services/stock';
-import { stockText } from '@/services/stock-units.cjs';
+import { approveStockAdjustment, createStockAdjustment, getLocations, getStockAdjustments, rejectStockAdjustment, searchReceiveProducts } from '@/services/stock';
+import { isMultiUnit } from '@/services/stock-units.cjs';
+import { invalidLine, lineQuantity } from '@/services/stock-adjustment-units.cjs';
 import { T } from '@/i18n/language-provider';
-import CameraBarcodeScanner from '@/components/common/camera-barcode-scanner';
 import StockAdjustmentsRegister from './stock-adjustments-register';
+import StockAdjustmentLine from './stock-adjustment-line';
+import StockAdjustmentProductPicker from './stock-adjustment-product-picker';
+import StockAdjustmentFields from './stock-adjustment-fields';
 import useToastMessages from '@/hooks/use-toast-messages';
 
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
 const recordId = (record) => String(record.id || record._id);
-const reasons = ['Damaged', 'Expired', 'Lost or stolen', 'Found extra stock', 'Data entry correction', 'Other'];
+
 
 export default function StockAdjustmentsPage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
@@ -93,7 +93,7 @@ export default function StockAdjustmentsPage() {
     || (reason === 'Found extra stock' && mode !== 'ADD')
   );
   const overStockLines = lines.filter((line) => (
-    mode === 'REMOVE' && Number(line.quantity) > Number(line.stockQuantity)
+    mode === 'REMOVE' && lineQuantity(line) > Number(line.stockQuantity)
   ));
 
   useEffect(() => {
@@ -128,13 +128,22 @@ export default function StockAdjustmentsPage() {
     setLines((current) => current.some((line) => line.productId === product.id)
       ? current : [...current, {
         productId: product.id,
+        unitsPerPackage: product.unitsPerPackage || 1,
+        packageUnitName: product.packageUnitName,
+        isWeightBased: product.isWeightBased,
         quantity: '1',
+        boxes: '0',
+        pieces: '0',
+        kg: '0',
         stockQuantity: Number(product.stockQuantity) || 0,
       }]);
     setSearch('');
     setMatches([]);
     setSearchError('');
   }, []);
+  const updateLine = (productId, field, value) => setLines((current) => current.map((line) => (
+    line.productId === productId ? { ...line, [field]: value } : line
+  )));
 
   const scanBarcode = useCallback(async (barcode) => {
     if (!token || !warehouseId || !canReadProducts) {
@@ -165,7 +174,7 @@ export default function StockAdjustmentsPage() {
     setError('');
     setNotice('');
     if (!warehouseId || !reason || (reason === 'Other' && !reasonNote.trim())
-      || !lines.length || lines.some((line) => !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0)) {
+      || !lines.length || lines.some(invalidLine)) {
       setError('Choose a location and reason, add a valid note for Other, and enter a positive quantity for each product.');
       return;
     }
@@ -184,7 +193,7 @@ export default function StockAdjustmentsPage() {
         mode,
         reason,
         ...(reason === 'Other' ? { reasonNote: reasonNote.trim() } : {}),
-        lines: lines.map((line) => ({ productId: line.productId, quantity: Number(line.quantity) })),
+        lines: lines.map((line) => ({ productId: line.productId, quantity: lineQuantity(line) })),
       });
       setAdjustments((current) => [response.data.stockAdjustment, ...current]);
       setLines([]);
@@ -229,68 +238,47 @@ export default function StockAdjustmentsPage() {
       {canWrite && (
         <Card title="New adjustment" description="Enter positive quantities; the selected mode determines whether stock is added or removed.">
           <form className="space-y-4" onSubmit={submit}>
-            <div className="grid gap-4 md:grid-cols-2">
-              {isSuperAdmin ? (
-                <Select label="Warehouse or outlet" name="warehouseId" value={warehouseId} onChange={(event) => {
-                  setWarehouseId(event.target.value);
-                  setLines([]);
-                  setSearch('');
-                  setMatches([]);
-                }}>
-                  <option value=""><T>{"Choose a location"}</T></option>
-                  {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-                </Select>
-              ) : (
-                <div className="space-y-2">
-                  <span className="block text-sm font-medium text-slate-700"><T>{"Location"}</T></span>
-                  <Badge tone="neutral">{user?.location?.name || locations.find((item) => item.id === warehouseId)?.name || 'No location assigned'}</Badge>
-                </div>
-              )}
-              <Select label="Adjustment mode" name="mode" value={mode} onChange={(event) => setMode(event.target.value)}>
-                <option value="REMOVE"><T>{"Remove stock"}</T></option>
-                <option value="ADD"><T>{"Add stock"}</T></option>
-              </Select>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Select label="Reason" name="reason" value={reason} onChange={(event) => setReason(event.target.value)} required>
-                <option value=""><T>{"Choose a reason"}</T></option>
-                {reasons.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-              {reason === 'Other' && <Input label="Reason note" name="reasonNote" value={reasonNote} onChange={(event) => setReasonNote(event.target.value)} maxLength={500} required placeholder="Add a short note" />}
-            </div>
+            <StockAdjustmentFields
+              isSuperAdmin={isSuperAdmin}
+              user={user}
+              locations={locations}
+              warehouseId={warehouseId}
+              onLocationChange={(event) => {
+                setWarehouseId(event.target.value);
+                setLines([]);
+                setSearch('');
+                setMatches([]);
+              }}
+              mode={mode}
+              onModeChange={(event) => setMode(event.target.value)}
+              reason={reason}
+              onReasonChange={(event) => setReason(event.target.value)}
+              reasonNote={reasonNote}
+              onReasonNoteChange={(event) => setReasonNote(event.target.value)}
+            />
             {reasonMismatch && <p role="alert" className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{reason} is not allowed in {mode === 'REMOVE' ? 'Remove stock' : 'Add stock'} mode.</p>}
             {!can(permissions, 'products:read') && <p className="text-sm text-amber-700"><T>{"Product read permission is required to select adjustment lines."}</T></p>}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="flex items-end gap-2">
-                <Input className="min-w-0 flex-1" label="Scan barcode and press Enter" name="barcodeScanner" value={scanner.value} onChange={scanner.onChange} onKeyDown={scanner.onKeyDown} placeholder="Focus here, then scan a product barcode" disabled={!warehouseId || !can(permissions, 'products:read')} />
-                <CameraBarcodeScanner onScan={scanBarcode} disabled={!warehouseId || !can(permissions, 'products:read')} />
-              </div>
-              <div className="relative">
-                <div className="flex items-end gap-2">
-                  <Input className="min-w-0 flex-1" label="Find product" name="productSearch" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or barcode" disabled={!warehouseId || !can(permissions, 'products:read')} />
-                  <CameraBarcodeScanner onScan={setSearch} disabled={!warehouseId || !can(permissions, 'products:read')} />
-                </div>
-                {searching && <p role="status" className="mt-1 text-xs text-slate-500"><T>{"Searching products..."}</T></p>}
-                {searchError && <p role="alert" className="mt-1 text-xs text-red-700">{searchError}</p>}
-                {matches.length > 0 && <div className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded border border-slate-200 bg-white shadow-lg">
-                  {matches.map((product) => <button key={product.id} type="button" className="block w-full border-b border-slate-100 px-3 py-2 text-left hover:bg-slate-50" onClick={() => addProduct(product)}>
-                    <span className="block text-sm font-medium">{product.name}</span>
-                    <small className="text-slate-500">{product.barcode} · Current stock: {stockText(product.stockQuantity, product)}</small>
-                  </button>)}
-                </div>}
-                {search.trim() && !searching && !searchError && matches.length === 0 && <p className="mt-1 text-xs text-slate-500"><T>{"No products found for this search."}</T></p>}
-              </div>
-            </div>
+            <StockAdjustmentProductPicker
+              warehouseId={warehouseId}
+              canReadProducts={can(permissions, 'products:read')}
+              scanner={scanner}
+              onScan={scanBarcode}
+              search={search}
+              onSearchChange={setSearch}
+              searching={searching}
+              searchError={searchError}
+              matches={matches}
+              onAddProduct={addProduct}
+            />
             {lines.map((line) => (
-              <div key={line.productId} className="grid items-end gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_8rem_12rem_auto]">
-                <div><strong className="block text-sm">{productsById.get(line.productId)?.name}</strong><small className="text-slate-500">{productsById.get(line.productId)?.barcode}</small></div>
-                <span className="pb-2 text-sm text-slate-600">Current stock: {stockText(line.stockQuantity, productsById.get(line.productId))}</span>
-                <div>
-                  <Input label="Quantity" type="number" min="0.000001" max={mode === 'REMOVE' ? line.stockQuantity : undefined} step="any" value={line.quantity} onChange={(event) => setLines((current) => current.map((entry) => entry.productId === line.productId ? { ...entry, quantity: event.target.value } : entry))} />
-                  {mode === 'REMOVE' && Number(line.quantity) > Number(line.stockQuantity) && <p className="mt-1 text-xs text-red-700">Cannot remove more than {stockText(line.stockQuantity, productsById.get(line.productId))} currently in stock.</p>}
-                </div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setLines((current) => current.filter((entry) => entry.productId !== line.productId))}>Remove</Button>
-              </div>
+              <StockAdjustmentLine
+                key={line.productId}
+                line={line}
+                product={productsById.get(line.productId)}
+                mode={mode}
+                onChange={updateLine}
+                onRemove={() => setLines((current) => current.filter((entry) => entry.productId !== line.productId))}
+              />
             ))}
             <div className="flex justify-end"><Button type="submit" disabled={saving || !lines.length || reasonMismatch}>{saving ? 'Submitting...' : 'Submit adjustment'}</Button></div>
           </form>

@@ -2,6 +2,7 @@
 
 import { Badge, Button, Card, Table } from '@/components/ui';
 import LocationReadFilter from '@/components/common/location-read-filter';
+import { formatSignedStock } from '@/services/stock-units.cjs';
 
 const recordId = (record) => String(record.id || record._id);
 const statusTone = { Approved: 'success', Pending: 'warning', Rejected: 'danger' };
@@ -23,7 +24,11 @@ export default function StockAdjustmentsRegister({
     { key: 'reason', label: 'Reason' },
     { key: 'lines', label: 'Lines', render: (items) => items.map((line) => {
       const product = productsById.get(String(line.productId));
-      return `${line.productName || product?.name || String(line.productId).slice(-6)} (${Number(line.quantity) > 0 ? '+' : ''}${line.quantity})`;
+      return `${line.productName || product?.name || String(line.productId).slice(-6)} (${formatSignedStock(
+        line.quantity,
+        line.unitsPerPackage || product?.unitsPerPackage,
+        line.packageUnitName || product?.packageUnitName,
+      )})`;
     }).join(', ') },
     { key: 'value', label: 'Value', render: money },
     { key: 'status', label: 'Status', render: (status) => <Badge tone={statusTone[status] || 'neutral'}>{status}</Badge> },

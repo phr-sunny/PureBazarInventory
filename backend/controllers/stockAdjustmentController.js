@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const {
   AuditLog, Location, Product, Settings, StockAdjustment, StockCount,
 } = require('../models');
+const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 const {
   statusError, canManageLocation, hasGlobalStockAccess, adjustmentValue, loadProducts, currentStock, postMovements, objectOf,
 } = require('../utils/stockAdjustments');
@@ -31,8 +32,11 @@ async function listAdjustments(req, res, next) {
       adjustment.lines.map((line) => line.productId.toString())
     )))];
     const products = productIds.length
-      ? await Product.find({ _id: { $in: productIds } }).select('_id name barcode').lean()
+      ? await Product.find({ _id: { $in: productIds } })
+        .select('_id name barcode unitId unitsPerPackage')
+        .lean()
       : [];
+    const labels = await unitLabelMap(products);
     const productsById = new Map(products.map((product) => [product._id.toString(), product]));
     return res.json({
       success: true,
@@ -42,6 +46,10 @@ async function listAdjustments(req, res, next) {
           ...line,
           productName: productsById.get(line.productId.toString())?.name,
           barcode: productsById.get(line.productId.toString())?.barcode,
+          unitsPerPackage: productsById.get(line.productId.toString())?.unitsPerPackage,
+          packageUnitName: productsById.has(line.productId.toString())
+            ? displayFields(productsById.get(line.productId.toString()), labels).packageUnitName
+            : undefined,
         })),
       })),
     });

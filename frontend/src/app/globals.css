@@ -324,6 +324,17 @@ html, body { max-width: 100%; overflow-x: hidden; }
 .page-content { max-width: none; min-width: 0; width: 100%; }
 .table-scroll, .overflow-x-auto { -webkit-overflow-scrolling: touch; max-width: 100%; }
 .ui-table { min-width: max(100%, max-content); width: 100%; }
+.salary-sheet-table .table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.salary-sheet-table .ui-table { min-width: 1040px; }
+.salary-sheet-table .ui-table th:first-child,
+.salary-sheet-table .ui-table td:first-child {
+  left: 0;
+  position: sticky;
+  box-shadow: 2px 0 4px #0f172a12;
+}
+.salary-sheet-table .ui-table th:first-child { background: var(--surface-soft); z-index: 2; }
+.salary-sheet-table .ui-table td:first-child { background: var(--surface); z-index: 1; }
+.salary-sheet-table .ui-table tbody tr:hover td:first-child { background: var(--surface-hover); }
 img, svg, canvas { max-width: 100%; }
 
 @media (max-width: 760px) {

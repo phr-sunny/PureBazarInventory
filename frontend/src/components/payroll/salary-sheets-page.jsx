@@ -214,7 +214,7 @@ export default function SalarySheetsPage() {
         </form>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[18rem_1fr]">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <Card title="Salary sheets" description="Select a month to review its payroll.">
           {loading ? <p role="status" className="py-6 text-center text-sm text-slate-500"><T>{"Loading sheets..."}</T></p> : (
             <div className="space-y-2">
@@ -229,28 +229,70 @@ export default function SalarySheetsPage() {
           )}
         </Card>
 
-        <Card title={sheet ? `Payroll · ${sheet.month}` : 'Payroll details'} description={sheet ? `${sheet.lines.length} employees · Total ${formatPayrollMoney(sheet.totalAmount)}` : 'Choose an existing salary sheet to view its lines.'}>
-          {sheet && <>
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <Badge tone={sheet.status === 'Paid' ? 'success' : sheet.status === 'Approved' ? 'warning' : 'neutral'}>{sheet.status}</Badge>
-              {canWrite && sheet.status === 'Draft' && <Button disabled={busy} onClick={() => runSheetAction('approve')}>Approve sheet</Button>}
-              {canWrite && sheet.status === 'Approved' && <>
-                <Select label="Payment method" name="payMethod" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
-                  {paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
-                </Select>
-                {(
-                  <Select label="Expense location" name="payLocation" required value={locationId} disabled={!canChooseLocation && !locations.length} onChange={(event) => setLocationId(event.target.value)}>
-                    <option value=""><T>{"Select a location"}</T></option>
-                    {locations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.type}</option>)}
+        <div className="min-w-0">
+          <Card title={sheet ? `Payroll · ${sheet.month}` : 'Payroll details'} description={sheet ? `${sheet.lines.length} employees · Total ${formatPayrollMoney(sheet.totalAmount)}` : 'Choose an existing salary sheet to view its lines.'}>
+            {sheet && <>
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <Badge tone={sheet.status === 'Paid' ? 'success' : sheet.status === 'Approved' ? 'warning' : 'neutral'}>{sheet.status}</Badge>
+                {canWrite && sheet.status === 'Draft' && <Button disabled={busy} onClick={() => runSheetAction('approve')}>Approve sheet</Button>}
+                {canWrite && sheet.status === 'Approved' && <>
+                  <Select label="Payment method" name="payMethod" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+                    {paymentMethods.map((method) => <option key={method} value={method}>{method}</option>)}
                   </Select>
-                )}
-                <Button disabled={busy || !locationId} onClick={() => runSheetAction('pay')}>Record payment</Button>
-              </>}
-              {sheet.status === 'Paid' && <span className="text-sm text-slate-600">Paid · {sheet.paidAt ? new Date(sheet.paidAt).toLocaleDateString('en-BD') : 'date unavailable'}</span>}
-            </div>
-            <Table columns={columns} rows={sheet.lines} rowKey="_id" emptyMessage="This sheet has no payroll lines." />
-          </>}
-        </Card>
+                  {(
+                    <Select label="Expense location" name="payLocation" required value={locationId} disabled={!canChooseLocation && !locations.length} onChange={(event) => setLocationId(event.target.value)}>
+                      <option value=""><T>{"Select a location"}</T></option>
+                      {locations.map((location) => <option key={location.id} value={location.id}>{location.name} · {location.type}</option>)}
+                    </Select>
+                  )}
+                  <Button disabled={busy || !locationId} onClick={() => runSheetAction('pay')}>Record payment</Button>
+                </>}
+                {sheet.status === 'Paid' && <span className="text-sm text-slate-600">Paid · {sheet.paidAt ? new Date(sheet.paidAt).toLocaleDateString('en-BD') : 'date unavailable'}</span>}
+              </div>
+              <div className="salary-sheet-table hidden min-w-0 max-w-full sm:block">
+                <Table columns={columns} rows={sheet.lines} rowKey="_id" emptyMessage="This sheet has no payroll lines." />
+              </div>
+              <div className="space-y-3 sm:hidden">
+                {sheet.lines.map((line) => {
+                  const id = employeeId(line.employeeId);
+                  const employee = employeeById.get(id);
+                  return (
+                    <article key={line._id} className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div>
+                        <strong className="block text-slate-800">{employee?.name || `Employee ${id.slice(-8)}`}</strong>
+                        {employee?.employeeCode && <small className="text-slate-500">{employee.employeeCode}</small>}
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                        <div><dt className="text-slate-500">Base salary</dt><dd className="m-0 font-medium">{formatPayrollMoney(line.baseSalary)}</dd></div>
+                        <div><dt className="text-slate-500">Advance</dt><dd className="m-0 font-medium">{formatPayrollMoney(line.advanceDeduction)}</dd></div>
+                        <div>
+                          <dt className="text-slate-500">Allowances</dt>
+                          <dd className="m-0">{sheet.status === 'Draft' && canWrite
+                            ? <Input aria-label={`Allowances for ${id}`} type="number" min="0" step="0.01" value={lineEdits[id]?.allowances ?? line.allowances} onChange={(event) => setLineEdits((current) => ({ ...current, [id]: { ...current[id], allowances: event.target.value } }))} />
+                            : <span className="font-medium">{formatPayrollMoney(line.allowances)}</span>}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Other deductions</dt>
+                          <dd className="m-0">{sheet.status === 'Draft' && canWrite
+                            ? <Input aria-label={`Other deductions for ${id}`} type="number" min="0" step="0.01" value={lineEdits[id]?.otherDeductions ?? line.otherDeductions} onChange={(event) => setLineEdits((current) => ({ ...current, [id]: { ...current[id], otherDeductions: event.target.value } }))} />
+                            : <span className="font-medium">{formatPayrollMoney(line.otherDeductions)}</span>}</dd>
+                        </div>
+                        <div className="col-span-2 border-t border-slate-100 pt-2">
+                          <dt className="text-slate-500">Net pay</dt><dd className="m-0 text-lg font-semibold">{formatPayrollMoney(line.netAmount)}</dd>
+                        </div>
+                      </dl>
+                      <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                        {sheet.status === 'Draft' && canWrite && <Button size="sm" variant="secondary" disabled={busy} onClick={() => saveLine(employee, line)}>Save</Button>}
+                        <Link className="ui-button button-secondary button-sm" href={`/payroll/payslips?sheetId=${sheet._id}&employeeId=${id}`}><T>{"Payslip"}</T></Link>
+                      </div>
+                    </article>
+                  );
+                })}
+                {!sheet.lines.length && <p className="py-5 text-center text-sm text-slate-500"><T>{"This sheet has no payroll lines."}</T></p>}
+              </div>
+            </>}
+          </Card>
+        </div>
       </div>
     </section>
   );

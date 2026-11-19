@@ -58,6 +58,20 @@ function formatStock(quantity, unitsPerPackage, packageUnitName) {
   return `${boxes} ${packageUnitName ? name : 'Box(es)'} and ${pieces} Pcs`;
 }
 
+function formatBoxPieces(quantity, unitsPerPackage, packageUnitName) {
+  const value = Number(quantity) || 0;
+  if (!isMultiUnit(unitsPerPackage)) return formatStock(value, unitsPerPackage, packageUnitName);
+  const { boxes, pieces } = splitQuantity(Math.abs(value), unitsPerPackage);
+  const boxLabel = packageUnitName || 'Box';
+  return pieces ? `${boxes} ${boxLabel} ${pieces} Pcs` : `${boxes} ${boxLabel}`;
+}
+
+function formatSignedStock(quantity, unitsPerPackage, packageUnitName) {
+  const value = Number(quantity) || 0;
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${formatBoxPieces(Math.abs(value), unitsPerPackage, packageUnitName)}`;
+}
+
 function formatLineQuantity(line) {
   const value = Number(line?.quantity) || 0;
   if (line?.unit === 'PIECE') return `${value} Pcs`;
@@ -74,4 +88,7 @@ function productLabel(item) {
 
 const stockText = (quantity, item) => formatStock(quantity, item?.unitsPerPackage, item?.packageUnitName);
 
-module.exports = { productLabel, stockText, isMultiUnit, splitQuantity, combineQuantity, formatStock, formatStockDisplay, formatLineQuantity, isGram, toGrams, fromGrams };
+module.exports = {
+ productLabel, stockText, isMultiUnit, splitQuantity, combineQuantity, formatStock,
+ formatBoxPieces, formatSignedStock, formatStockDisplay, formatLineQuantity, isGram, toGrams, fromGrams,
+};

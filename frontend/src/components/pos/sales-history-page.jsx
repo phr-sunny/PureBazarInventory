@@ -17,6 +17,9 @@ const currency = new Intl.NumberFormat('en-BD', { style: 'currency', currency: '
 const amount = (value) => currency.format(Number(value) || 0);
 const dateTime = (value) => (value ? new Date(value).toLocaleString() : '—');
 const orderId = (order) => String(order._id || order.id);
+const cashierName = (cashier) => (
+  cashier && typeof cashier === 'object' && cashier.name ? cashier.name : '—'
+);
 
 function OrderDetails({ order }) {
   if (!order) return null;
@@ -25,7 +28,7 @@ function OrderDetails({ order }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <div><small className="text-slate-500"><T>{"Bill"}</T></small><p className="m-0 font-semibold">{order.orderNumber}</p></div>
         <div><small className="text-slate-500"><T>{"Sale date"}</T></small><p className="m-0 font-semibold">{dateTime(order.soldAt || order.createdAt)}</p></div>
-        <div><small className="text-slate-500"><T>{"Cashier"}</T></small><p className="m-0 font-semibold">{order.cashier?.name || String(order.cashier || '—')}</p></div>
+        <div><small className="text-slate-500"><T>{"Cashier"}</T></small><p className="m-0 font-semibold">{cashierName(order.cashier)}</p></div>
         <div><small className="text-slate-500"><T>{"Payment"}</T></small><p className="m-0 font-semibold">{order.payments?.map((item) => `${paymentMethodLabel(item.method)} ${amount(item.amount)}`).join(', ') || '—'}</p></div>
       </div>
       <div className="table-wrap">
@@ -59,7 +62,7 @@ export default function SalesHistoryPage() {
   const paidTotal = sumMoney(orders.filter((order) => order.paymentStatus === 'PAID').map((order) => order.grandTotal));
   const columns = [
     { key: 'orderNumber', label: 'Bill', render: (value, row) => <div><strong>{value}</strong><small className="block text-slate-500">{dateTime(row.soldAt || row.createdAt)}</small></div> },
-    { key: 'cashier', label: 'Cashier', render: (value) => value?.name || (value ? String(value).slice(-8) : '—') },
+    { key: 'cashier', label: 'Cashier', render: cashierName },
     { key: 'payments', label: 'Payment', render: (payments = []) => payments.map((item) => paymentMethodLabel(item.method)).join(', ') || '—' },
     { key: 'grandTotal', label: 'Total', render: (value) => amount(value) },
     { key: 'paymentStatus', label: 'Status', render: (value) => <Badge tone={value === 'PAID' ? 'success' : 'warning'}>{value === 'REFUNDED' ? 'Refunded' : 'Paid'}</Badge> },

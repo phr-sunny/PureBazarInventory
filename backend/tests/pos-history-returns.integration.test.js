@@ -33,6 +33,7 @@ function query(value) {
   const chain = {
     select: jest.fn(() => chain),
     session: jest.fn(() => chain),
+    populate: jest.fn(() => chain),
     sort: jest.fn(() => chain),
     limit: jest.fn(() => chain),
     lean: jest.fn(async () => value),
@@ -174,6 +175,22 @@ describe('POS history and returns API', () => {
     });
     expect(filter.$and[0].$or[0].soldAt.$gte.toISOString()).toBe('2026-10-18T00:00:00.000Z');
     expect(filter.$and[0].$or[0].soldAt.$lt.toISOString()).toBe('2026-10-19T00:00:00.000Z');
+  });
+
+  it('returns the cashier name in sales history bill details', async () => {
+    const cashierOrder = {
+      ...db.order,
+      cashier: { _id: cashierId, name: 'Cashier Name' },
+      lines: [{ productId, quantity: 2, total: 200, packageUnitName: 'Box' }],
+    };
+    const orderQuery = query([cashierOrder]);
+    models.Order.find.mockReturnValue(orderQuery);
+
+    const response = await request(app).get('/api/pos/history').set(auth());
+
+    expect(response.status).toBe(200);
+    expect(orderQuery.populate).toHaveBeenCalledWith('cashier', 'name');
+    expect(response.body.orders[0].cashier).toMatchObject({ name: 'Cashier Name' });
   });
 
   it('returns a full bill with stock restoration and exact vendor-ledger reversal', async () => {

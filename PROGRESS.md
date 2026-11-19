@@ -710,3 +710,8 @@
 	- Files: location-scoped stock and POS routes/controllers/services; integration tests; GRN, adjustment, count, transfer, return, shift and sales-history screens; shared location filters and badges.
 	- Decisions: Super Admin and `canViewAllLocations` users select active locations on reads; All omits the location query parameter. Other users remain scoped to their assigned location. Writes remain location-locked except the existing Central Warehouse stock-count rule and the permitted all-location transfer-receipt exception. Transfer reads honor a selected location, and receipt output/audit records the confirmer and destination.
 	- Validation: backend Jest passes (46 suites, 332 tests); frontend production build passes. Frontend tests pass 28/29; the remaining existing i18n assertion reports eight untranslated literals, including goods-receive and unrelated UI text. `git diff --check` passes.
+
+- [x] B Adjustment Box and Pcs, product edit, toast, payroll table
+	- Files: Stock adjustment Box/Pieces conversion and register formatting; product edit modal and update API validation; populated cashier names in sales history; vendor registration and KYB success toasts; responsive Salary Sheet table and mobile cards.
+	- Decisions: adjustment values continue through existing StockMovement package quantities and posting rules; no Stock Adjustment print view exists in the app to update. Product updates reject stock-related fields and preserve price history/audit checks.
+	- Validation: backend Jest passes (46 suites, 337 tests); focused stock conversion tests pass (13); frontend production build passes.

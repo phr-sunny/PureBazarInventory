@@ -1,6 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { splitQuantity, combineQuantity, formatStock, formatStockDisplay, formatLineQuantity, toGrams, fromGrams } = require('./stock-units.cjs');
+const {
+  splitQuantity, combineQuantity, formatStock, formatBoxPieces, formatSignedStock,
+  formatStockDisplay, formatLineQuantity, toGrams, fromGrams,
+} = require('./stock-units.cjs');
 const { lineTotal } = require('./pos-cart-utils.cjs');
 const { productLabel, stockText } = require('./stock-units.cjs');
 
@@ -73,5 +76,13 @@ describe('stock units', () => {
   it('round-trips boxes and pieces', () => {
     assert.deepEqual(splitQuantity(combineQuantity(3, 200, 250), 250), { boxes: 3, pieces: 200 });
     assert.equal(combineQuantity(2, 3, 6), 2.5);
+  });
+  it('converts and displays retail boxes and pieces exactly', () => {
+    const tenPieces = combineQuantity(0, 10, 100);
+    const oneBox = combineQuantity(1, 0, 100);
+    assert.equal(tenPieces, 0.1);
+    assert.equal(oneBox, 1);
+    assert.equal(formatBoxPieces(0.9, 100, 'Box'), '0 Box 90 Pcs');
+    assert.equal(formatSignedStock(-tenPieces, 100, 'Box'), '-0 Box 10 Pcs');
   });
 });
