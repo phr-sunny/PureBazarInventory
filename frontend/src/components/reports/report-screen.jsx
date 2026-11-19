@@ -19,6 +19,9 @@ const currentMonth = () => {
 
 export default function ReportScreen({ type }) {
   const { token, user } = useSelector((state) => state.auth);
+  const canExport = type !== 'attendance'
+    || user?.permissions?.includes('*')
+    || user?.permissions?.includes('reports.attendance:write');
   const { canSelect, locations, loadingLocations, locationError } = useAccountingLocations(token, user);
   const config = reportConfig[type];
   const [filters, setFilters] = useState({
@@ -186,7 +189,7 @@ export default function ReportScreen({ type }) {
           ) : (
             <Card
               title={type === 'stock' ? 'Stock movement' : config.title}
-              actions={
+              actions={canExport ? (
                 <div className="flex gap-2">
                   <Button variant="secondary" size="sm" disabled={Boolean(exporting)} onClick={() => exportReport('xlsx')}>
                     <FileSpreadsheet size={16} className="mr-1 inline" /> Excel
@@ -195,7 +198,7 @@ export default function ReportScreen({ type }) {
                     <FileDown size={16} className="mr-1 inline" /> PDF
                   </Button>
                 </div>
-              }
+              ) : null}
             >
               <ReportTable columns={config.columns} rows={reportRows} emptyMessage="No records match these filters." />
             </Card>

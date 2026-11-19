@@ -2,6 +2,7 @@
 
 import { useDispatch, useSelector } from 'react-redux';
 import { loginUser, logoutUser } from './auth-slice';
+import { canAccessPermissions } from './permission-access.mjs';
 
 export default function useAuth() {
   const dispatch = useDispatch();
@@ -13,15 +14,12 @@ export default function useAuth() {
   }
 
   function canAccess(requiredPermissions = [], pageKey) {
-    const granted = auth.user?.permissions || [];
-    const pageAware = pageKey && granted.some((permission) => /^[a-z]+\.[a-z-]+:(read|write)$/.test(permission));
-    if (pageAware && !granted.includes('*')) {
-      return granted.includes(`${pageKey}:read`) || granted.includes(`${pageKey}:write`);
-    }
-    return requiredPermissions.length === 0
-      || requiredPermissions.some((permission) => permission === '*'
-        ? auth.user?.role === 'Super Admin' && auth.user?.permissions?.includes('*')
-        : hasPermission(permission));
+    return canAccessPermissions(
+      auth.user?.permissions || [],
+      requiredPermissions,
+      pageKey,
+      auth.user?.role,
+    );
   }
 
   return {

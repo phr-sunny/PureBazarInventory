@@ -8,7 +8,6 @@ const { salesReport, stockReport } = require('../services/salesStockReportServic
 const { vendorProfitability, profitLoss, vatDiscountReport } = require('../services/financeReportService');
 const { toExcel, toPdf } = require('../services/reportExportService');
 const { getAttendanceReport } = require('../controllers/attendanceController');
-const { Employee } = require('../models');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -33,6 +32,15 @@ const stockAccess = reportAccess('reports.stock', ['reports:read', 'reports:sale
 const vendorProfitAccess = reportAccess('reports.vendor-profit', ['reports:read']);
 const profitLossAccess = reportAccess('reports.profit-loss', ['reports:read']);
 const vatDiscountAccess = reportAccess('reports.vat-discount', ['reports:read']);
+const attendanceReportAccess = (req, res, next) => {
+  const permissions = ['xlsx', 'pdf'].includes(req.query.format)
+    ? ['reports.attendance:write']
+    : [];
+  const authorize = permissions.length
+    ? authorizeMiddleware({ permissions })
+    : authorizeMiddleware({ anyPermissions: ['reports.attendance:read', 'reports.attendance:write'] });
+  return authorize(req, res, next);
+};
 const exportFormats = [
   query('format').optional().isIn(['json', 'xlsx', 'pdf']).withMessage('format must be json, xlsx or pdf'),
 ];
@@ -159,22 +167,13 @@ router.get('/vat-discount', vatDiscountAccess, dateRange, exportFormats, validat
   });
 }));
 
-router.get('/attendance', authorizeMiddleware({ permissions: ['attendance:read'] }), [
+router.get('/attendance', attendanceReportAccess, [
   query('month').matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('month must be YYYY-MM'),
   query('locationId').optional({ values: 'falsy' }).isMongoId().withMessage('A valid location is required'),
   ...exportFormats,
 ], validateRequest, wrap(async (req, res) => {
-  const userHasAllLocations = Boolean(req.user.canViewAllLocations);
-  const employee = await Employee.findOne({
-    userId: req.user._id, status: 'ACTIVE',
-  });
-  const selfOnly = Boolean(employee) && !userHasAllLocations
-    && !req.user.permissions.includes('attendance:write')
-    && !req.user.permissions.includes('*');
-  const locationId = selfOnly ? employee.locationId : req.locationId;
-  const employeeFilter = selfOnly
-    ? { _id: employee._id, status: 'ACTIVE' }
-    : { status: 'ACTIVE', ...(locationId ? { locationId } : {}) };
+  const locationId = req.locationId;
+  const employeeFilter = { status: 'ACTIVE', ...(locationId ? { locationId } : {}) };
   const report = await getAttendanceReport(req.query.month, locationId, employeeFilter);
   const format = req.query.format || 'json';
   if (format === 'json') return res.json({ success: true, report });

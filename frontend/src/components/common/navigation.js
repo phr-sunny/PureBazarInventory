@@ -125,7 +125,7 @@ export const navigationItems = [
       { label: 'Vendor Profitability', href: '/reports/vendor-profit', icon: PieChart, permissions: ['reports:read'] },
       { label: 'Profit and Loss', href: '/reports/profit-loss', icon: Calculator, permissions: ['reports:read'] },
       { label: 'VAT & Discounts', href: '/reports/vat-discount', icon: Percent, permissions: ['reports:read'] },
-      { label: 'Attendance Report', href: '/reports/attendance', icon: CalendarDays, permissions: ['attendance:read'] },
+      { label: 'Attendance Report', href: '/reports/attendance', icon: CalendarDays, permissions: ['reports.attendance:read'] },
     ],
   },
   {
@@ -181,7 +181,7 @@ export const routePermissions = [
   { prefix: '/reports/vendor-profit', permissions: ['reports:read'] },
   { prefix: '/reports/profit-loss', permissions: ['reports:read'] },
   { prefix: '/reports/vat-discount', permissions: ['reports:read'] },
-  { prefix: '/reports/attendance', permissions: ['attendance:read'] },
+  { prefix: '/reports/attendance', permissions: ['reports.attendance:read'] },
   { prefix: '/reports/audit-trail', permissions: ['*'] },
   { prefix: '/roles', permissions: ['*'] },
   { prefix: '/settings', permissions: ['*'] },
@@ -223,7 +223,7 @@ export const pageKeys = {
   '/reports/vendor-profit': 'reports.vendor-profit',
   '/reports/profit-loss': 'reports.profit-loss',
   '/reports/vat-discount': 'reports.vat-discount',
-  '/reports/attendance': 'attendance',
+  '/reports/attendance': 'reports.attendance',
 };
 
 export function getPageKey(pathname) {

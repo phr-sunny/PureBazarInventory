@@ -250,7 +250,9 @@ describe('users and roles endpoints', () => {
 
     expect(response.status).toBe(201);
     const stored = Role.create.mock.calls[0][0].permissions;
-    expect(granularPermissions).toHaveLength(74);
+    expect(granularPermissions).toHaveLength(76);
+    expect(granularPermissions).toContain('reports.attendance:read');
+    expect(granularPermissions).toContain('reports.attendance:write');
     expect(stored).toEqual(expect.arrayContaining(granularPermissions));
     expect(stored).toEqual(expect.arrayContaining(['stock:transfer:receive', 'vendor-payouts:write', 'payroll:write']));
   });

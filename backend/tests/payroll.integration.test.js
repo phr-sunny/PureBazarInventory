@@ -170,6 +170,7 @@ describe('payroll API', () => {
   });
 
   it('adds reference attendance summaries without changing salary totals', async () => {
+    permissions.push('attendance:read');
     const shift = await models.WorkShift.create({
       name: 'Day shift', startTime: '09:00', endTime: '17:00', locationId, isActive: true,
     });
@@ -202,5 +203,24 @@ describe('payroll API', () => {
     const payslip = await request(app).get(`/api/payroll/sheets/${sheet._id}/payslips/${alice._id}`).set(auth);
     expect(payslip.body.payslip.attendanceSummary).toEqual(aliceLine.attendanceSummary);
     expect(payslip.body.payslip.netAmount).toBe(aliceLine.netAmount);
+  });
+
+  it('hides attendance summaries unless the requester also has Attendance read permission', async () => {
+    const sheet = (await post('/api/payroll/sheets', { month: '2026-10' })).body.sheet;
+    expect(sheet.lines[0]).not.toHaveProperty('attendanceSummary');
+
+    const payslip = await request(app).get(
+      `/api/payroll/sheets/${sheet._id}/payslips/${alice._id}`,
+    ).set(auth);
+    expect(payslip.status).toBe(200);
+    expect(payslip.body.payslip).not.toHaveProperty('attendanceSummary');
+
+    permissions.push('attendance:read');
+    const readableSheet = await request(app).get(`/api/payroll/sheets/${sheet._id}`).set(auth);
+    expect(readableSheet.body.sheet.lines[0]).toHaveProperty('attendanceSummary');
+    const readablePayslip = await request(app).get(
+      `/api/payroll/sheets/${sheet._id}/payslips/${alice._id}`,
+    ).set(auth);
+    expect(readablePayslip.body.payslip).toHaveProperty('attendanceSummary');
   });
 });

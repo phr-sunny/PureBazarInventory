@@ -39,6 +39,7 @@ const permissionCatalog = [
   page('reports.vendor-profit'),
   page('reports.profit-loss'),
   page('reports.vat-discount'),
+  page('reports.attendance'),
   page('system.audit-logs', ['auditlogs:read'], ['auditlogs:write']),
   page('system.expense-categories', ['expense-categories:read'], ['expense-categories:write']),
   page('system.settings-roles', ['settings:read', 'roles:read'], ['settings:write', 'roles:write']),

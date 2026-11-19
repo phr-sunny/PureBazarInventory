@@ -249,10 +249,13 @@ describe('attendance and attendance report', () => {
   });
 
   it('reports underlying monthly attendance counts and exports Excel and PDF', async () => {
+    actor.roleId.permissions = ['reports.attendance:write'];
     const date = nowDhakaDate();
     const worker = await employee('A-6', 'Eli', locationA);
+    const outsideWorker = await employee('B-6', 'Outside outlet', locationB);
     const workShift = await shift('Day', '00:01', '23:59', locationA);
     const entry = await roster(worker, workShift, date, locationA);
+    const outsideEntry = await roster(outsideWorker, workShift, date, locationB);
     const clockIn = new Date(Date.now() - 9 * 3600000);
     await models.AttendanceRecord.create({
       employeeId: worker._id,
@@ -266,10 +269,22 @@ describe('attendance and attendance report', () => {
       source: 'self',
       createdBy: actorId,
     });
+    await models.AttendanceRecord.create({
+      employeeId: outsideWorker._id,
+      locationId: locationB,
+      rosterEntryId: outsideEntry._id,
+      clockIn,
+      clockOut: new Date(clockIn.getTime() + 8 * 3600000),
+      late: false,
+      earlyLeave: false,
+      unscheduled: false,
+      source: 'self',
+      createdBy: actorId,
+    });
 
     const month = date.slice(0, 7);
     const response = await request(app).get('/api/reports/attendance')
-      .query({ month, locationId: locationA.toString() }).set(auth);
+      .query({ month, locationId: locationB.toString() }).set(auth);
     expect(response.status).toBe(200);
     expect(response.body.report.rows).toEqual([expect.objectContaining({
       employeeCode: 'A-6',
@@ -279,6 +294,7 @@ describe('attendance and attendance report', () => {
       lateCount: 1,
       totalWorkedHours: 8,
     })]);
+    expect(response.body.report.rows.map((row) => row.employeeCode)).not.toContain('B-6');
 
     const xlsx = await request(app).get('/api/reports/attendance')
       .query({ month, locationId: locationA.toString(), format: 'xlsx' })
@@ -291,5 +307,25 @@ describe('attendance and attendance report', () => {
       .set(auth).buffer(true).parse(parseBinary);
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect(pdf.body.slice(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('requires Attendance Report permission for its page and write permission for exports', async () => {
+    const month = nowDhakaDate().slice(0, 7);
+    actor.roleId.permissions = ['attendance:read'];
+    const deniedReport = await request(app).get('/api/reports/attendance').query({ month }).set(auth);
+    const deniedExcel = await request(app).get('/api/reports/attendance')
+      .query({ month, format: 'xlsx' }).set(auth);
+    const deniedPdf = await request(app).get('/api/reports/attendance')
+      .query({ month, format: 'pdf' }).set(auth);
+    expect(deniedReport.status).toBe(403);
+    expect(deniedExcel.status).toBe(403);
+    expect(deniedPdf.status).toBe(403);
+
+    actor.roleId.permissions = ['reports.attendance:read'];
+    expect((await request(app).get('/api/reports/attendance').query({ month }).set(auth)).status).toBe(200);
+    expect((await request(app).get('/api/reports/attendance')
+      .query({ month, format: 'xlsx' }).set(auth)).status).toBe(403);
+    expect((await request(app).get('/api/reports/attendance')
+      .query({ month, format: 'pdf' }).set(auth)).status).toBe(403);
   });
 });

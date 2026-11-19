@@ -82,6 +82,7 @@ export const permissionGroups = [
       row('reports.vendor-profit', 'Vendor Profitability', ['reports:read']),
       row('reports.profit-loss', 'Profit and Loss', ['reports:read']),
       row('reports.vat-discount', 'VAT and Discounts', ['reports:read']),
+      row('reports.attendance', 'Attendance Report'),
     ],
   },
   {
