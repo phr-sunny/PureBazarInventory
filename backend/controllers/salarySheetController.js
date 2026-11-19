@@ -4,11 +4,26 @@ const {
 const {
   buildSalaryLines, fromCents, lineDeductionCents, lineGrossCents, toCents,
 } = require('../services/payrollService');
+const { getMonthlyAttendanceSummaries } = require('../services/attendanceService');
 
 function statusError(message, status) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+async function sheetWithAttendance(sheet) {
+  const result = sheet.toObject ? sheet.toObject() : { ...sheet };
+  const summaries = await getMonthlyAttendanceSummaries(
+    result.month, result.lines.map((line) => line.employeeId),
+  );
+  result.lines = result.lines.map((line) => ({
+    ...line,
+    attendanceSummary: summaries.get(String(line.employeeId)) || {
+      rosteredShifts: 0, attended: 0, absent: 0, lateCount: 0, totalWorkedHours: 0,
+    },
+  }));
+  return result;
 }
 
 function audit(req, action, entityId, before, after) {
@@ -35,7 +50,7 @@ async function listSheets(req, res, next) {
 
 async function getSheet(req, res, next) {
   try {
-    return res.json({ success: true, sheet: await loadSheet(req.params.id) });
+    return res.json({ success: true, sheet: await sheetWithAttendance(await loadSheet(req.params.id)) });
   } catch (error) {
     return next(error);
   }
@@ -54,7 +69,7 @@ async function createSheet(req, res, next) {
       lines: buildSalaryLines(employees, advances),
     });
     await audit(req, 'CREATE', sheet._id, undefined, sheet.toObject());
-    return res.status(201).json({ success: true, sheet });
+    return res.status(201).json({ success: true, sheet: await sheetWithAttendance(sheet) });
   } catch (error) {
     if (error.code === 11000) return next(statusError('A salary sheet already exists for this month', 409));
     return next(error);
@@ -75,7 +90,7 @@ async function updateLine(req, res, next) {
     }
     await sheet.save();
     await audit(req, 'UPDATE', sheet._id, before, sheet.toObject());
-    return res.json({ success: true, sheet });
+    return res.json({ success: true, sheet: await sheetWithAttendance(sheet) });
   } catch (error) {
     return next(error);
   }
@@ -101,7 +116,7 @@ async function approveSheet(req, res, next) {
     sheet.approvedBy = req.user._id;
     await sheet.save();
     await audit(req, 'APPROVE', sheet._id, before, sheet.toObject());
-    return res.json({ success: true, sheet });
+    return res.json({ success: true, sheet: await sheetWithAttendance(sheet) });
   } catch (error) {
     return next(error);
   }
@@ -146,7 +161,7 @@ async function paySheet(req, res, next) {
       actorId: req.user._id, action: 'CREATE', entity: 'Expense', entityId: expense._id, after: expense.toObject(), ipAddress: req.ip,
     });
     await audit(req, 'PAY', sheet._id, before, sheet.toObject());
-    return res.json({ success: true, sheet, expense });
+    return res.json({ success: true, sheet: await sheetWithAttendance(sheet), expense });
   } catch (error) {
     if (expense && error.code !== 11000) await Expense.deleteOne({ _id: expense._id });
     if (error.code === 11000) return next(statusError('This salary sheet already has an expense', 409));
@@ -179,6 +194,11 @@ async function payslip(req, res, next) {
         otherDeductions: line.otherDeductions,
         totalDeductions: fromCents(toCents(line.advanceDeduction) + toCents(line.otherDeductions)),
         netAmount: line.netAmount,
+        attendanceSummary: (await getMonthlyAttendanceSummaries(
+          sheet.month, [line.employeeId],
+        )).get(String(line.employeeId)) || {
+          rosteredShifts: 0, attended: 0, absent: 0, lateCount: 0, totalWorkedHours: 0,
+        },
         advances: advances.map((a) => ({ _id: a._id, amount: a.amount, reason: a.reason, requestedAt: a.requestedAt })),
       },
     });

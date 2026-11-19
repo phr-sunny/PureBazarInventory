@@ -30,6 +30,7 @@ const permissionCatalog = [
   page('hr.employees', ['employees:read'], ['employees:write']),
   page('hr.work-shifts'),
   page('hr.shift-roster'),
+  page('attendance', ['attendance:read'], ['attendance:write']),
   page('hr.salary-sheets', ['payroll:read'], ['payroll:write']),
   page('hr.payslips', ['payroll:read'], []),
   page('hr.advances', ['payroll:read', 'salary-advances:read'], ['payroll:write', 'salary-advances:write']),

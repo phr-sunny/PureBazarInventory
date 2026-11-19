@@ -44,7 +44,8 @@ export default function AppShell({ children }) {
   }
   if (pathname === '/login') return isAuthenticated ? null : children;
   if (!isAuthenticated) return <main className="auth-status" role="status">{t('Redirecting to sign in...')}</main>;
-  if (!canAccess(getRoutePermissions(pathname), getPageKey(pathname))) {
+  const isAttendanceSelfService = pathname === '/payroll/attendance';
+  if (!isAttendanceSelfService && !canAccess(getRoutePermissions(pathname), getPageKey(pathname))) {
     return (
       <main className="auth-status">
         <section className="access-denied">

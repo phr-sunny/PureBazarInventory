@@ -8,6 +8,7 @@ jest.mock('../models', () => ({
     toObject: () => ({
       shareholderDiscountPercent: 5,
       stockAdjustmentApprovalLimit: 0,
+      lateGraceMinutes: 10,
       vatEnabled: false,
       defaultVatRate: 0,
       vatPriceMode: 'EXCLUDED',
@@ -57,6 +58,7 @@ function settingsDocument(fields = {}) {
     _id: settingsId,
     shareholderDiscountPercent: 5,
     stockAdjustmentApprovalLimit: 0,
+    lateGraceMinutes: 10,
     vatEnabled: false,
     defaultVatRate: 0,
     vatPriceMode: 'EXCLUDED',
@@ -143,6 +145,7 @@ describe('settings and audit endpoints', () => {
     expect(defaults.body.settings).toMatchObject({
       shareholderDiscountPercent: 5,
       stockAdjustmentApprovalLimit: 0,
+      lateGraceMinutes: 10,
       vatEnabled: false,
       commissionEnabled: false,
       vendorWalletPayoutEnabled: false,
@@ -205,6 +208,25 @@ describe('settings and audit endpoints', () => {
       expect.objectContaining({ upsert: true, runValidators: true }),
     );
     expect(invalid.status).toBe(400);
+  });
+
+  it('validates and saves the attendance late grace setting', async () => {
+    const valid = await request(app).put('/api/settings').set(auth).send({ lateGraceMinutes: 15 });
+    const invalid = await request(app).put('/api/settings').set(auth).send({ lateGraceMinutes: -1 });
+
+    expect(valid.status).toBe(200);
+    expect(Settings.findOneAndUpdate).toHaveBeenCalledWith(
+      { singleton: 'global' },
+      { $set: { lateGraceMinutes: 15 } },
+      expect.objectContaining({ runValidators: true }),
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it('returns the default grace period for settings saved before the field existed', async () => {
+    Settings.findOne.mockReturnValue(chain(settingsDocument({ lateGraceMinutes: undefined })));
+    const response = await request(app).get('/api/settings').set(auth);
+    expect(response.body.settings.lateGraceMinutes).toBe(10);
   });
 
   it('rejects modified vendor terms and cut-off dates inconsistent with the cycle', async () => {

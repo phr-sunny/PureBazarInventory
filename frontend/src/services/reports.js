@@ -13,6 +13,7 @@ const reportPaths = {
   vendor: '/reports/vendor-profitability',
   profitLoss: '/reports/profit-loss',
   vatDiscount: '/reports/vat-discount',
+  attendance: '/reports/attendance',
 };
 
 export function getReport(token, type, params) {

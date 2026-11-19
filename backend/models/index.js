@@ -27,6 +27,7 @@ module.exports = {
   Employee: require('./Employee'),
   WorkShift: require('./WorkShift'),
   RosterEntry: require('./RosterEntry'),
+  AttendanceRecord: require('./AttendanceRecord'),
   SalarySheet: require('./SalarySheet'),
   SalaryAdvance: require('./SalaryAdvance'),
   ExpenseCategory: require('./ExpenseCategory'),

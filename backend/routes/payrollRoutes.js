@@ -8,6 +8,7 @@ const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
 const enforceLocationScope = require('../middlewares/enforceLocationScope');
 const validateRequest = require('../middlewares/validateRequest');
+const attendanceController = require('../controllers/attendanceController');
 
 const router = express.Router();
 const can = (permission) => [authMiddleware, authorizeMiddleware({ permissions: [permission] })];
@@ -89,6 +90,32 @@ router.post('/roster/copy-last-week', can('hr.shift-roster:write'), workShiftLoc
   }),
   body('locationId').optional().isMongoId(),
 ], validateRequest, rosterController.copyLastWeek);
+
+router.get('/attendance/me', authMiddleware, attendanceController.me);
+router.post('/attendance/clock-in', authMiddleware, attendanceController.clockIn);
+router.post('/attendance/clock-out', authMiddleware, attendanceController.clockOut);
+router.get('/attendance', authMiddleware, workShiftLocation, [
+  query('date').matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+  query('locationId').optional().isMongoId(),
+], validateRequest, attendanceController.listAttendance);
+router.post('/attendance/records', can('attendance:write'), workShiftLocation, [
+  body('employeeId').isMongoId(),
+  body('date').matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+  body('clockIn').isISO8601(),
+  body('clockOut').optional({ values: 'falsy' }).isISO8601(),
+  body('rosterEntryId').optional().isMongoId(),
+  body('reason').isString().trim().isLength({ min: 1, max: 500 }),
+  body('locationId').optional().isMongoId(),
+], validateRequest, attendanceController.createManagerRecord);
+router.patch('/attendance/records/:id', can('attendance:write'), workShiftLocation, [
+  mongoId('id'),
+  body('date').optional().matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+  body('clockIn').optional().isISO8601(),
+  body('clockOut').optional({ values: 'falsy' }).isISO8601(),
+  body('rosterEntryId').optional().isMongoId(),
+  body('reason').isString().trim().isLength({ min: 1, max: 500 }),
+  body('locationId').optional().isMongoId(),
+], validateRequest, attendanceController.updateManagerRecord);
 
 router.get('/advances', can('payroll:read'), [
   query('employeeId').optional().isMongoId(),

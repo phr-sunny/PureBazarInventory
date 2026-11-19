@@ -67,3 +67,15 @@ export const getPayslip = (token, sheetId, employeeId) => api.get(
   `/payroll/sheets/${sheetId}/payslips/${employeeId}`,
   authConfig(token),
 );
+export const getMyAttendance = (token) => api.get('/payroll/attendance/me', authConfig(token));
+export const clockIn = (token) => api.post('/payroll/attendance/clock-in', {}, authConfig(token));
+export const clockOut = (token) => api.post('/payroll/attendance/clock-out', {}, authConfig(token));
+export const getAttendance = (token, params) => api.get('/payroll/attendance', {
+  ...authConfig(token), params,
+});
+export const createAttendanceRecord = (token, payload) => api.post(
+  '/payroll/attendance/records', payload, authConfig(token),
+);
+export const updateAttendanceRecord = (token, id, payload) => api.patch(
+  `/payroll/attendance/records/${id}`, payload, authConfig(token),
+);

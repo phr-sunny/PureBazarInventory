@@ -720,3 +720,8 @@
 	- Files: Employee work-location/employment fields and login-link validation; WorkShift and RosterEntry models; outlet-scoped shift and roster APIs; Work Shifts and weekly Shift Roster screens with mobile cards; role-permission matrix entries; overlap, duplicate, location, self-view, copy, and audit tests.
 	- Decisions: Keep cashier Shift / Day Close unchanged; only Super Admin may write outside the assigned location; permissions are added but not granted automatically.
 	- Validation: backend Jest passes (47 suites, 344 tests); frontend production build passes. Frontend tests remain 28/29 because of nine pre-existing untranslated strings outside this change.
+
+- [x] S2 Attendance, summary and report
+	- Files: AttendanceRecord model and location-scoped self/manager APIs; attendance screen and header clock control; late-grace setting and Attendance permission; reference-only monthly payroll summaries; Attendance Report with Excel/PDF exports; attendance, settings, payroll, report, and permission tests.
+	- Decisions: Self punch times come only from the server clock; late grace defaults to 10 minutes; absences are derived from ended roster shifts and never stored as attendance records. Payroll summaries are calculated from attendance data for reference only and do not alter monthly salary or deductions. All-location reads remain read-only except for Super Admin.
+	- Validation: backend Jest passes (48 suites, 355 tests); frontend production build passes with both Attendance routes. Route-security checker accepts the self-status endpoint as authenticated self-service and still reports the pre-existing notifications route response.

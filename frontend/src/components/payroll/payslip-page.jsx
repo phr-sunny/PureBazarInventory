@@ -8,6 +8,7 @@ import { getEmployees, getPayslip, getSalarySheet, getSalarySheets } from '@/ser
 import { employeeId, formatPayrollDate, formatPayrollMoney } from './payroll-utils.mjs';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
+import AttendanceSummary from './attendance-summary';
 
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
 
@@ -147,6 +148,9 @@ export default function PayslipPage() {
               <div className="sm:col-span-2 lg:col-span-3"><dt className="text-sm text-slate-500"><T>{"Net pay"}</T></dt><dd className="mt-1 text-2xl font-bold text-slate-900">{formatPayrollMoney(payslip.netAmount)}</dd></div>
               {payslip.paidAt && <div><dt className="text-sm text-slate-500"><T>{"Paid date"}</T></dt><dd className="mt-1 font-semibold text-slate-800">{formatPayrollDate(payslip.paidAt)}</dd></div>}
             </dl>
+            <div className="mt-6">
+              <AttendanceSummary summary={payslip.attendanceSummary} />
+            </div>
             <div className="mt-6">
               <h3 className="mb-2 font-semibold text-slate-800"><T>{"Advance deductions"}</T></h3>
               <Table columns={advanceColumns} rows={payslip.advances || []} rowKey="_id" emptyMessage="No advances were deducted for this employee." />

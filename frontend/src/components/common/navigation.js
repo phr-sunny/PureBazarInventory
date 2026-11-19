@@ -109,6 +109,7 @@ export const navigationItems = [
       { label: 'Employees', href: '/payroll/employees', icon: Users, permissions: ['employees:read'] },
       { label: 'Work Shifts', href: '/payroll/work-shifts', icon: Clock, permissions: ['hr.work-shifts:read'] },
       { label: 'Shift Roster', href: '/payroll/shift-roster', icon: CalendarDays, permissions: ['hr.shift-roster:read'] },
+      { label: 'Attendance', href: '/payroll/attendance', icon: CalendarDays, permissions: ['attendance:read'] },
       { label: 'Salary Sheet / Payroll', href: '/payroll/salary-sheets', icon: Banknote, permissions: ['payroll:read'] },
       { label: 'Payslips', href: '/payroll/payslips', icon: FileSpreadsheet, permissions: ['payroll:read'] },
       { label: 'Advances', href: '/payroll/advances', icon: HandCoins, permissions: ['payroll:read'] },
@@ -124,6 +125,7 @@ export const navigationItems = [
       { label: 'Vendor Profitability', href: '/reports/vendor-profit', icon: PieChart, permissions: ['reports:read'] },
       { label: 'Profit and Loss', href: '/reports/profit-loss', icon: Calculator, permissions: ['reports:read'] },
       { label: 'VAT & Discounts', href: '/reports/vat-discount', icon: Percent, permissions: ['reports:read'] },
+      { label: 'Attendance Report', href: '/reports/attendance', icon: CalendarDays, permissions: ['attendance:read'] },
     ],
   },
   {
@@ -170,6 +172,7 @@ export const routePermissions = [
   { prefix: '/payroll/employees', permissions: ['employees:read'] },
   { prefix: '/payroll/work-shifts', permissions: ['hr.work-shifts:read'] },
   { prefix: '/payroll/shift-roster', permissions: ['hr.shift-roster:read'] },
+  { prefix: '/payroll/attendance', permissions: ['attendance:read'] },
   { prefix: '/payroll/salary-sheets', permissions: ['payroll:read'] },
   { prefix: '/payroll/payslips', permissions: ['payroll:read'] },
   { prefix: '/payroll/advances', permissions: ['payroll:read'] },
@@ -178,6 +181,7 @@ export const routePermissions = [
   { prefix: '/reports/vendor-profit', permissions: ['reports:read'] },
   { prefix: '/reports/profit-loss', permissions: ['reports:read'] },
   { prefix: '/reports/vat-discount', permissions: ['reports:read'] },
+  { prefix: '/reports/attendance', permissions: ['attendance:read'] },
   { prefix: '/reports/audit-trail', permissions: ['*'] },
   { prefix: '/roles', permissions: ['*'] },
   { prefix: '/settings', permissions: ['*'] },
@@ -210,6 +214,7 @@ export const pageKeys = {
   '/payroll/employees': 'hr.employees',
   '/payroll/work-shifts': 'hr.work-shifts',
   '/payroll/shift-roster': 'hr.shift-roster',
+  '/payroll/attendance': 'attendance',
   '/payroll/salary-sheets': 'hr.salary-sheets',
   '/payroll/payslips': 'hr.payslips',
   '/payroll/advances': 'hr.advances',
@@ -218,6 +223,7 @@ export const pageKeys = {
   '/reports/vendor-profit': 'reports.vendor-profit',
   '/reports/profit-loss': 'reports.profit-loss',
   '/reports/vat-discount': 'reports.vat-discount',
+  '/reports/attendance': 'attendance',
 };
 
 export function getPageKey(pathname) {

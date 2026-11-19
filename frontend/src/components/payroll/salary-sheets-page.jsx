@@ -13,6 +13,7 @@ import {
 import { employeeId, formatPayrollMoney, monthNow } from './payroll-utils.mjs';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
+import AttendanceSummary from './attendance-summary';
 
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
 const paymentMethods = ['Cash', 'Bank', 'bKash', 'Nagad', 'Card'];
@@ -185,6 +186,11 @@ export default function SalarySheetsPage() {
     },
     { key: 'netAmount', label: 'Net pay', render: formatPayrollMoney },
     {
+      key: 'attendanceSummary',
+      label: 'Attendance · reference',
+      render: (value) => <AttendanceSummary summary={value} compact />,
+    },
+    {
       key: 'actions',
       label: 'Actions',
       render: (_, line) => (
@@ -281,6 +287,7 @@ export default function SalarySheetsPage() {
                           <dt className="text-slate-500">Net pay</dt><dd className="m-0 text-lg font-semibold">{formatPayrollMoney(line.netAmount)}</dd>
                         </div>
                       </dl>
+                      <AttendanceSummary summary={line.attendanceSummary} />
                       <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                         {sheet.status === 'Draft' && canWrite && <Button size="sm" variant="secondary" disabled={busy} onClick={() => saveLine(employee, line)}>Save</Button>}
                         <Link className="ui-button button-secondary button-sm" href={`/payroll/payslips?sheetId=${sheet._id}&employeeId=${id}`}><T>{"Payslip"}</T></Link>

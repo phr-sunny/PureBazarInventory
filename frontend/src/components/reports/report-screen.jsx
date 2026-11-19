@@ -12,11 +12,18 @@ import { formatValue, reportConfig, ReportTable } from './report-config';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
 
+const currentMonth = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
 export default function ReportScreen({ type }) {
   const { token, user } = useSelector((state) => state.auth);
   const { canSelect, locations, loadingLocations, locationError } = useAccountingLocations(token, user);
   const config = reportConfig[type];
-  const [filters, setFilters] = useState({ from: '', to: '', groupBy: 'day', lowStockThreshold: '10' });
+  const [filters, setFilters] = useState({
+    from: '', to: '', month: currentMonth(), groupBy: 'day', lowStockThreshold: '10',
+  });
   const [selectedLocationId, setSelectedLocationId] = useState('all');
   const [appliedFilters, setAppliedFilters] = useState({});
   const [report, setReport] = useState(null);
@@ -40,8 +47,17 @@ export default function ReportScreen({ type }) {
   }, [token, type]);
 
   useEffect(() => {
-    if (token) loadReport({});
-  }, [token, loadReport]);
+    if (token && type !== 'attendance') loadReport({});
+  }, [token, loadReport, type]);
+
+  useEffect(() => {
+    if (token && type === 'attendance') {
+      loadReport({
+        month: filters.month,
+        locationId: accountingLocationParam(user, selectedLocationId),
+      });
+    }
+  }, [filters.month, loadReport, selectedLocationId, token, type, user]);
 
   const metrics = useMemo(() => {
     if (type === 'stock') {
@@ -64,21 +80,24 @@ export default function ReportScreen({ type }) {
 
   async function applyFilters(event) {
     event.preventDefault();
-    const params = {
-      from: filters.from,
-      to: filters.to,
-      locationId: accountingLocationParam(user, selectedLocationId),
-    };
+    const params = { locationId: accountingLocationParam(user, selectedLocationId) };
+    if (type === 'attendance') params.month = filters.month;
+    else {
+      params.from = filters.from;
+      params.to = filters.to;
+    }
     if (type === 'sales') params.groupBy = filters.groupBy;
     if (type === 'stock') params.lowStockThreshold = filters.lowStockThreshold;
     await loadReport(params);
   }
 
   async function clearFilters() {
-    const cleared = { from: '', to: '', groupBy: 'day', lowStockThreshold: '10' };
+    const cleared = { from: '', to: '', month: currentMonth(), groupBy: 'day', lowStockThreshold: '10' };
     setFilters(cleared);
     setSelectedLocationId('all');
-    await loadReport({ locationId: accountingLocationParam(user, 'all') });
+    const params = { locationId: accountingLocationParam(user, 'all') };
+    if (type === 'attendance') params.month = cleared.month;
+    await loadReport(params);
   }
 
   async function exportReport(format) {
@@ -113,8 +132,12 @@ export default function ReportScreen({ type }) {
       </header>
 
       <form onSubmit={applyFilters} className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-5">
+        {type === 'attendance' ? (
+          <Input label="Month" type="month" value={filters.month} onChange={(event) => updateFilter('month', event.target.value)} />
+        ) : <>
         <Input label="From date" type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => updateFilter('from', event.target.value)} />
         <Input label="To date" type="date" min={filters.from || undefined} value={filters.to} onChange={(event) => updateFilter('to', event.target.value)} />
+        </>}
         <AccountingLocationFilter
           canSelect={canSelect}
           locations={locations}

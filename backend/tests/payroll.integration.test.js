@@ -5,11 +5,14 @@ const request = require('supertest');
 
 jest.mock('../models', () => {
   const actual = {
+    AttendanceRecord: jest.requireActual('../models/AttendanceRecord'),
     Employee: jest.requireActual('../models/Employee'),
     Expense: jest.requireActual('../models/Expense'),
     ExpenseCategory: jest.requireActual('../models/ExpenseCategory'),
     SalaryAdvance: jest.requireActual('../models/SalaryAdvance'),
     SalarySheet: jest.requireActual('../models/SalarySheet'),
+    RosterEntry: jest.requireActual('../models/RosterEntry'),
+    WorkShift: jest.requireActual('../models/WorkShift'),
   };
   const { fakeModel } = require('./helpers/fakeModel');
   const stores = {};
@@ -164,5 +167,40 @@ describe('payroll API', () => {
     expect(res.body.payslip.advances).toHaveLength(1);
     const missing = await request(app).get(`/api/payroll/sheets/${sheet._id}/payslips/${new mongoose.Types.ObjectId()}`).set(auth);
     expect(missing.status).toBe(404);
+  });
+
+  it('adds reference attendance summaries without changing salary totals', async () => {
+    const shift = await models.WorkShift.create({
+      name: 'Day shift', startTime: '09:00', endTime: '17:00', locationId, isActive: true,
+    });
+    const attendedEntry = await models.RosterEntry.create({
+      employeeId: alice._id, workShiftId: shift._id, date: new Date('2026-08-03T00:00:00Z'),
+      locationId, createdBy: userId,
+    });
+    await models.RosterEntry.create({
+      employeeId: alice._id, workShiftId: shift._id, date: new Date('2026-08-04T00:00:00Z'),
+      locationId, createdBy: userId,
+    });
+    await models.AttendanceRecord.create({
+      employeeId: alice._id, locationId, rosterEntryId: attendedEntry._id,
+      clockIn: new Date('2026-08-03T03:00:00Z'), clockOut: new Date('2026-08-03T11:00:00Z'),
+      late: true, earlyLeave: false, unscheduled: false, source: 'self', createdBy: userId,
+    });
+
+    const response = await post('/api/payroll/sheets', { month: '2026-08' });
+    const sheet = response.body.sheet;
+    const aliceLine = sheet.lines.find((line) => String(line.employeeId) === String(alice._id));
+    const bobLine = sheet.lines.find((line) => String(line.employeeId) === String(bob._id));
+    expect(sheet.totalAmount).toBe(50000.56);
+    expect(aliceLine.attendanceSummary).toEqual({
+      rosteredShifts: 2, attended: 1, absent: 1, lateCount: 1, totalWorkedHours: 8,
+    });
+    expect(bobLine.attendanceSummary).toEqual({
+      rosteredShifts: 0, attended: 0, absent: 0, lateCount: 0, totalWorkedHours: 0,
+    });
+
+    const payslip = await request(app).get(`/api/payroll/sheets/${sheet._id}/payslips/${alice._id}`).set(auth);
+    expect(payslip.body.payslip.attendanceSummary).toEqual(aliceLine.attendanceSummary);
+    expect(payslip.body.payslip.netAmount).toBe(aliceLine.netAmount);
   });
 });

@@ -10,6 +10,7 @@ import NotificationBell from './notification-bell';
 import LanguageSwitcher from './language-switcher';
 import { useLanguage } from '@/i18n/language-provider';
 import { getDashboardLocations } from '@/services/dashboard';
+import AttendanceClockControl from './attendance-clock-control';
 
 const DASHBOARD_LOCATION_KEY = 'purebazar.dashboardLocationId';
 
@@ -102,6 +103,7 @@ export default function Header({ section, onMenuClick }) {
           {user.location.name}
         </span>
       ) : null}
+      <AttendanceClockControl token={token} compact />
       <LanguageSwitcher />
       {canAccess(['stock:read']) || canAccess(['stock:transfer:read']) ? <NotificationBell /> : null}
       <div className="user-menu-wrap" ref={wrapRef}>

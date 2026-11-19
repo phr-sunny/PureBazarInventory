@@ -88,6 +88,20 @@ export const reportConfig = {
       ['totalDiscount', 'Total discount', 'money'],
     ],
   },
+  attendance: {
+    title: 'Attendance Report',
+    description: 'Review rostered shifts, attendance, absences, late arrivals, and worked hours.',
+    metrics: [],
+    columns: [
+      ['employeeCode', 'Employee code'],
+      ['employeeName', 'Employee'],
+      ['rosteredShifts', 'Rostered shifts', 'count'],
+      ['attended', 'Attended', 'count'],
+      ['absent', 'Absent', 'count'],
+      ['lateCount', 'Late', 'count'],
+      ['totalWorkedHours', 'Worked hours', 'number'],
+    ],
+  },
 };
 
 const moneyFormatter = new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT' });

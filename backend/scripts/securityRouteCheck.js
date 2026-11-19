@@ -35,7 +35,11 @@ void Module;
 const app = require('../server');
 
 const PUBLIC = new Set(['POST /api/auth/login', 'GET /api/health']);
-const AUTH_ONLY_OK = new Set(['GET /api/auth/me', 'POST /api/auth/logout']);
+const AUTH_ONLY_OK = new Set([
+  'GET /api/auth/me',
+  'POST /api/auth/logout',
+  'GET /api/payroll/attendance/me',
+]);
 
 function mountPath(layer) {
   const source = layer.regexp.source;

@@ -184,6 +184,17 @@ export default function SettingsForm() {
              />
       </SettingsSection>
 
+      <SettingsSection title="Attendance" description="Set how many minutes after a scheduled shift start count as late.">
+        <Input
+          label="Late grace minutes"
+          type="number"
+          min="0"
+          step="1"
+          value={settings.lateGraceMinutes}
+          onChange={(event) => setField('lateGraceMinutes', Number(event.target.value))}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Payments and receipt" description="Choose accepted checkout methods and configure the receipt layout.">
         <MethodChoices label="Enabled payment methods" methods={paymentMethods} value={settings.enabledPaymentMethods} onChange={(value) => setField('enabledPaymentMethods', value)} />
         <ReceiptLayoutEditor value={settings.receiptLayout} onChange={(value) => setField('receiptLayout', value)} />

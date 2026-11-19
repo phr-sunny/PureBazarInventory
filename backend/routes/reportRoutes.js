@@ -7,6 +7,8 @@ const validateRequest = require('../middlewares/validateRequest');
 const { salesReport, stockReport } = require('../services/salesStockReportService');
 const { vendorProfitability, profitLoss, vatDiscountReport } = require('../services/financeReportService');
 const { toExcel, toPdf } = require('../services/reportExportService');
+const { getAttendanceReport } = require('../controllers/attendanceController');
+const { Employee } = require('../models');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -154,6 +156,41 @@ router.get('/vat-discount', vatDiscountAccess, dateRange, exportFormats, validat
     ],
     rows: report.rows,
     totals: report.totals,
+  });
+}));
+
+router.get('/attendance', authorizeMiddleware({ permissions: ['attendance:read'] }), [
+  query('month').matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('month must be YYYY-MM'),
+  query('locationId').optional({ values: 'falsy' }).isMongoId().withMessage('A valid location is required'),
+  ...exportFormats,
+], validateRequest, wrap(async (req, res) => {
+  const userHasAllLocations = Boolean(req.user.canViewAllLocations);
+  const employee = await Employee.findOne({
+    userId: req.user._id, status: 'ACTIVE',
+  });
+  const selfOnly = Boolean(employee) && !userHasAllLocations
+    && !req.user.permissions.includes('attendance:write')
+    && !req.user.permissions.includes('*');
+  const locationId = selfOnly ? employee.locationId : req.locationId;
+  const employeeFilter = selfOnly
+    ? { _id: employee._id, status: 'ACTIVE' }
+    : { status: 'ACTIVE', ...(locationId ? { locationId } : {}) };
+  const report = await getAttendanceReport(req.query.month, locationId, employeeFilter);
+  const format = req.query.format || 'json';
+  if (format === 'json') return res.json({ success: true, report });
+  return sendReportExport(res, format, 'attendance-report', {
+    title: 'Attendance Report',
+    subtitle: `Month: ${report.month}`,
+    columns: [
+      { key: 'employeeCode', label: 'Employee code', width: 18 },
+      { key: 'employeeName', label: 'Employee', width: 26 },
+      { key: 'rosteredShifts', label: 'Rostered shifts' },
+      { key: 'attended', label: 'Attended' },
+      { key: 'absent', label: 'Absent' },
+      { key: 'lateCount', label: 'Late' },
+      { key: 'totalWorkedHours', label: 'Worked hours' },
+    ],
+    rows: report.rows,
   });
 }));
 
