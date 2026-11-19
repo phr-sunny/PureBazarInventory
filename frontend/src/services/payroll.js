@@ -14,6 +14,32 @@ export const saveEmployee = (token, payload, id) => api.request({
   data: payload,
   ...authConfig(token),
 });
+export const getLinkableUsers = (token, locationId) => api.get('/payroll/employee-users', {
+  ...authConfig(token),
+  params: locationId ? { locationId } : undefined,
+});
+export const getWorkShifts = (token, locationId) => api.get('/payroll/work-shifts', {
+  ...authConfig(token), params: locationId ? { locationId } : undefined,
+});
+export const saveWorkShift = (token, locationId, payload, id) => api.request({
+  method: id ? 'PATCH' : 'POST',
+  url: id ? `/payroll/work-shifts/${id}` : '/payroll/work-shifts',
+  data: { ...payload, locationId },
+  ...authConfig(token),
+});
+export const getShiftRoster = (token, locationId, weekStart) => api.get('/payroll/roster', {
+  ...authConfig(token), params: { locationId, weekStart },
+});
+export const getMyRoster = (token) => api.get('/payroll/my-roster', authConfig(token));
+export const assignRosterShift = (token, locationId, payload) => api.post(
+  '/payroll/roster', { ...payload, locationId }, authConfig(token),
+);
+export const removeRosterShift = (token, locationId, id) => api.delete(`/payroll/roster/${id}`, {
+  ...authConfig(token), params: { locationId },
+});
+export const copyLastWeekRoster = (token, locationId, weekStart) => api.post(
+  '/payroll/roster/copy-last-week', { locationId, weekStart }, authConfig(token),
+);
 export const getAdvances = (token, params = {}) => api.get('/payroll/advances', {
   ...authConfig(token),
   params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')),

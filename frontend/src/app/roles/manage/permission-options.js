@@ -66,6 +66,8 @@ export const permissionGroups = [
     name: 'HR / Payroll',
     rows: [
       row('hr.employees', 'Employees', ['employees:read'], ['employees:write']),
+      row('hr.work-shifts', 'Work Shifts'),
+      row('hr.shift-roster', 'Shift Roster'),
       row('hr.salary-sheets', 'Salary Sheet / Payroll', ['payroll:read'], ['payroll:write']),
       row('hr.payslips', 'Payslips', ['payroll:read']),
       row('hr.advances', 'Advances', ['payroll:read', 'salary-advances:read'], ['payroll:write', 'salary-advances:write']),

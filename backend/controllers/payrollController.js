@@ -1,4 +1,7 @@
-const { AuditLog, Employee, SalaryAdvance } = require('../models');
+const {
+  AuditLog, Employee, Location, SalaryAdvance, User,
+} = require('../models');
+const { locationIdOf } = require('../utils/locationScope');
 
 function statusError(message, status) {
   const error = new Error(message);
@@ -12,6 +15,26 @@ function audit(req, action, entity, entityId, before, after) {
   });
 }
 
+async function validateEmployeeLocation(values, existing) {
+  const userId = Object.prototype.hasOwnProperty.call(values, 'userId') ? values.userId : existing?.userId;
+  const locationId = Object.prototype.hasOwnProperty.call(values, 'locationId')
+    ? values.locationId : existing?.locationId;
+  if (locationId) {
+    const location = await Location.findById(locationId);
+    if (!location || location.type !== 'OUTLET' || location.isActive === false) {
+      throw statusError('Select an active outlet for the employee', 400);
+    }
+  }
+  if (userId) {
+    const linkedUser = await User.findById(userId);
+    if (!linkedUser) throw statusError('Linked login user not found', 400);
+    if (!locationId || !locationIdOf(linkedUser.locationId)
+      || String(locationIdOf(linkedUser.locationId)) !== String(locationId)) {
+      throw statusError('The linked user and employee must have the same location', 400);
+    }
+  }
+}
+
 async function listEmployees(req, res, next) {
   try {
     const filter = req.query.status ? { status: req.query.status } : {};
@@ -22,8 +45,20 @@ async function listEmployees(req, res, next) {
   }
 }
 
+async function listLinkableUsers(req, res, next) {
+  try {
+    if (!req.locationId) throw statusError('Select an outlet', 400);
+    const users = await User.find({ locationId: req.locationId, isActive: true })
+      .select('_id name email locationId').sort({ name: 1 }).lean();
+    return res.json({ success: true, users });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 async function createEmployee(req, res, next) {
   try {
+    await validateEmployeeLocation(req.body);
     const employee = await Employee.create(req.body);
     await audit(req, 'CREATE', 'Employee', employee._id, undefined, employee.toObject());
     return res.status(201).json({ success: true, employee });
@@ -37,6 +72,7 @@ async function updateEmployee(req, res, next) {
   try {
     const employee = await Employee.findById(req.params.id);
     if (!employee) throw statusError('Employee not found', 404);
+    await validateEmployeeLocation(req.body, employee);
     const before = employee.toObject();
     Object.assign(employee, req.body);
     await employee.save();
@@ -113,6 +149,7 @@ module.exports = {
   approveAdvance: advanceTransition('approve'),
   createAdvance,
   createEmployee,
+  listLinkableUsers,
   listAdvances,
   listEmployees,
   payAdvance: advanceTransition('pay'),

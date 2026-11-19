@@ -7,10 +7,10 @@ describe('Mongoose models', () => {
   it('registers every requested model', () => {
     expect(Object.keys(models).sort()).toEqual([
       'AuditLog', 'Brand', 'Category', 'DiscountLog', 'Employee', 'Expense', 'ExpenseCategory',
-      'GoodsReceive', 'Location', 'Order', 'PriceHistory', 'Product', 'Return', 'Role', 'SalaryAdvance',
+      'GoodsReceive', 'Location', 'Order', 'PriceHistory', 'Product', 'Return', 'Role', 'RosterEntry', 'SalaryAdvance',
       'SalarySheet', 'Settings', 'Shareholder', 'Shift', 'StockAdjustment', 'StockCount',
       'StockMovement', 'StockTransfer', 'Unit', 'User', 'Vendor', 'VendorLedger',
-      'VendorRegistration', 'VendorStatement', 'WalletAuditLog', 'WalletLog', 'WalletReconciliation',
+      'VendorRegistration', 'VendorStatement', 'WalletAuditLog', 'WalletLog', 'WalletReconciliation', 'WorkShift',
     ]);
   });
 

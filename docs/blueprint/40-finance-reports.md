@@ -2,8 +2,11 @@ FINANCE: Revenue ledger (VAT shown separately), payout approval,
 expenses, payroll (salary sheet Draft/Approved/Paid creates one expense
 per sheet; closed months never edited), mandatory daily wallet
 reconciliation vs Probashi report (Pending/Matched/Mismatch).
-SHIFT: opening cash, closing cash, expected vs actual, report by payment
-method.
+HR & PAYROLL: optional employee login/location/employment details,
+outlet-specific work shift times, and weekly employee rostering. Linked
+employees see their own upcoming assignments read-only.
+SHIFT: cashier cash drawer opening/closing, expected vs actual, report by
+payment method. This is separate from HR work shifts and roster entries.
 REPORTS: sales and stock, vendor profitability (Excel/PDF), expense and
 profit/Loss (margin income + own-stock margin - discounts - expenses),
 VAT and discount report, audit trail.

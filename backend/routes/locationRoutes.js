@@ -11,7 +11,8 @@ router.get('/locations', authMiddleware, authorizeMiddleware({
   anyPermissions: [
     'stock:read', 'stock:transfer:read', 'expenses:read', 'expenses:write',
     'finance:read', 'reports:read', 'vendors:read', 'payroll:write',
-    'dashboard:read', 'pos:read',
+    'dashboard:read', 'pos:read', 'employees:write',
+    'hr.work-shifts:read', 'hr.shift-roster:read',
   ],
 }), [
   query('type').optional().isIn(['CENTRAL', 'OUTLET']).withMessage('Location type must be CENTRAL or OUTLET'),

@@ -3,32 +3,67 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Badge, Button, Card, Input, Select, Table } from '@/components/ui';
-import { getEmployees, saveEmployee } from '@/services/payroll';
+import { getLocations } from '@/services/stock';
+import { canSelectAccountingLocation } from '@/components/finance/accounting-location-filter';
+import { getEmployees, getLinkableUsers, saveEmployee } from '@/services/payroll';
 import { formatPayrollDate, formatPayrollMoney } from './payroll-utils.mjs';
 import { T } from '@/i18n/language-provider';
 import useToastMessages from '@/hooks/use-toast-messages';
 
 const blankEmployee = () => ({
   employeeCode: '', name: '', phone: '', email: '', designation: '', department: '',
-  baseSalary: '', hireDate: '', status: 'ACTIVE',
+  baseSalary: '', hireDate: '', status: 'ACTIVE', userId: '', locationId: '',
+  employmentType: '', isStudent: '', notes: '',
 });
 const can = (permissions, permission) => permissions.includes('*') || permissions.includes(permission);
+const idOf = (value) => String(value?._id || value || '');
 
 export default function EmployeesPage() {
   const { token, user, initialized } = useSelector((state) => state.auth);
   const permissions = user?.permissions || [];
   const canRead = can(permissions, 'employees:read');
   const canWrite = can(permissions, 'employees:write');
+  const canChooseLocation = canSelectAccountingLocation(user);
   const [employees, setEmployees] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [linkableUsers, setLinkableUsers] = useState([]);
   const [status, setStatus] = useState('');
   const [form, setForm] = useState(blankEmployee);
   const [editingId, setEditingId] = useState('');
+  const [editingEmployee, setEditingEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   useToastMessages({ success: notice, error });
+
+  useEffect(() => {
+    if (!token || !canWrite) return undefined;
+    let active = true;
+    getLocations(token, 'OUTLET').then(({ data }) => {
+      if (!active) return;
+      const activeLocations = data.locations.filter((location) => location.isActive);
+      const assigned = idOf(user?.locationId);
+      setLocations(canChooseLocation ? activeLocations : activeLocations.filter((location) => location.id === assigned));
+    }).catch((requestError) => active && setError(
+      requestError.response?.data?.message || 'Unable to load locations.',
+    ));
+    return () => { active = false; };
+  }, [canChooseLocation, canWrite, token, user]);
+
+  useEffect(() => {
+    if (!token || !canWrite || !form.locationId) {
+      setLinkableUsers([]);
+      return undefined;
+    }
+    let active = true;
+    getLinkableUsers(token, form.locationId).then(({ data }) => active && setLinkableUsers(data.users))
+      .catch((requestError) => active && setError(
+        requestError.response?.data?.message || 'Unable to load login users.',
+      ));
+    return () => { active = false; };
+  }, [canWrite, form.locationId, token]);
 
   useEffect(() => {
     if (!token || !canRead) return undefined;
@@ -56,12 +91,19 @@ export default function EmployeesPage() {
       baseSalary: String(employee.baseSalary),
       hireDate: employee.hireDate ? String(employee.hireDate).slice(0, 10) : '',
       status: employee.status,
+      userId: idOf(employee.userId),
+      locationId: idOf(employee.locationId),
+      employmentType: employee.employmentType || '',
+      isStudent: employee.isStudent === undefined ? '' : String(Boolean(employee.isStudent)),
+      notes: employee.notes || '',
     });
+    setEditingEmployee(employee);
     setNotice('');
   }
 
   function resetForm() {
     setEditingId('');
+    setEditingEmployee(null);
     setForm(blankEmployee());
   }
 
@@ -73,6 +115,12 @@ export default function EmployeesPage() {
     const payload = Object.fromEntries(
       Object.entries(form).filter(([, value]) => value !== ''),
     );
+    if (editingEmployee?.userId && !form.userId) payload.userId = null;
+    if (editingEmployee?.locationId && !form.locationId) payload.locationId = null;
+    if (editingEmployee?.notes && !form.notes) payload.notes = null;
+    if (editingEmployee?.employmentType && !form.employmentType) payload.employmentType = null;
+    if (editingEmployee?.isStudent !== undefined && form.isStudent === '') payload.isStudent = null;
+    if (form.isStudent !== '') payload.isStudent = form.isStudent === 'true';
     try {
       await saveEmployee(token, payload, editingId);
       setNotice(editingId ? 'Employee updated.' : 'Employee added.');
@@ -93,6 +141,8 @@ export default function EmployeesPage() {
     },
     { key: 'designation', label: 'Designation', render: (value) => value || '—' },
     { key: 'department', label: 'Department', render: (value) => value || '—' },
+    { key: 'employmentType', label: 'Employment', render: (value) => value || '—' },
+    { key: 'locationId', label: 'Outlet', render: (value) => locations.find((location) => location.id === idOf(value))?.name || '—' },
     { key: 'phone', label: 'Phone', render: (value) => value || '—' },
     { key: 'baseSalary', label: 'Base salary', render: formatPayrollMoney },
     { key: 'hireDate', label: 'Hire date', render: formatPayrollDate },
@@ -133,6 +183,26 @@ export default function EmployeesPage() {
             <Select label="Status" name="status" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
               <option value="ACTIVE"><T>{"Active"}</T></option><option value="INACTIVE"><T>{"Inactive"}</T></option>
             </Select>
+            <Select label="Outlet" name="locationId" value={form.locationId} onChange={(event) => setForm({ ...form, locationId: event.target.value, userId: '' })}>
+              <option value=""><T>{"No outlet assigned"}</T></option>
+              {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+            </Select>
+            <Select label="Login user" name="userId" value={form.userId} disabled={!form.locationId} onChange={(event) => setForm({ ...form, userId: event.target.value })}>
+              <option value=""><T>{"No linked login"}</T></option>
+              {editingEmployee?.userId && !linkableUsers.some((item) => idOf(item._id) === idOf(editingEmployee.userId))
+                && <option value={idOf(editingEmployee.userId)}>{idOf(editingEmployee.userId)}</option>}
+              {linkableUsers.map((loginUser) => <option key={loginUser._id} value={loginUser._id}>{loginUser.name} · {loginUser.email}</option>)}
+            </Select>
+            <Select label="Employment type" name="employmentType" value={form.employmentType} onChange={(event) => setForm({ ...form, employmentType: event.target.value })}>
+              <option value=""><T>{"Not specified"}</T></option>
+              <option value="full-time"><T>{"Full-time"}</T></option>
+              <option value="part-time"><T>{"Part-time"}</T></option>
+            </Select>
+            <Select label="Student" name="isStudent" value={String(form.isStudent)} onChange={(event) => setForm({ ...form, isStudent: event.target.value })}>
+              <option value=""><T>{"Not specified"}</T></option>
+              <option value="false"><T>{"No"}</T></option><option value="true"><T>{"Yes"}</T></option>
+            </Select>
+            <Input label="Notes" name="notes" maxLength={1000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
             <div className="flex items-end gap-2">
               <Button type="submit" disabled={saving}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Add employee'}</Button>
               {editingId && <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>}

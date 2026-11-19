@@ -5,7 +5,19 @@ const same = (a, b) => String(a) === String(b);
 function matches(doc, filter) {
   return Object.entries(filter || {}).every(([key, cond]) => {
     const value = doc[key];
-    if (cond && typeof cond === 'object' && cond.$in) return cond.$in.some((item) => same(item, value));
+    if (cond && typeof cond === 'object'
+      && Object.getPrototypeOf(cond) === Object.prototype) {
+      if (cond.$in) return cond.$in.some((item) => same(item, value));
+      const actual = value instanceof Date ? value.getTime() : value;
+      return Object.entries(cond).every(([operator, expected]) => {
+        const target = expected instanceof Date ? expected.getTime() : expected;
+        if (operator === '$gte') return actual >= target;
+        if (operator === '$gt') return actual > target;
+        if (operator === '$lte') return actual <= target;
+        if (operator === '$lt') return actual < target;
+        return false;
+      });
+    }
     if (cond === null) return value === null || value === undefined;
     return same(cond, value);
   });
@@ -20,7 +32,11 @@ function query(items) {
 
 function fakeModel(Real, store) {
   const duplicate = (doc) => {
-    const unique = { Employee: 'employeeCode', ExpenseCategory: 'name', SalarySheet: 'month' }[Real.modelName];
+    const unique = {
+      Employee: 'employeeCode',
+      ExpenseCategory: 'name',
+      SalarySheet: 'month',
+    }[Real.modelName];
     if (unique && store.some((other) => other[unique] === doc[unique])) {
       return Object.assign(new Error('duplicate key'), { code: 11000 });
     }
@@ -28,6 +44,14 @@ function fakeModel(Real, store) {
       && store.some((other) => same(other.sourceId, doc.sourceId))) {
       return Object.assign(new Error('duplicate key'), { code: 11000 });
     }
+    if (Real.modelName === 'WorkShift' && store.some((other) => (
+      same(other.locationId, doc.locationId) && other.name === doc.name
+    ))) return Object.assign(new Error('duplicate key'), { code: 11000 });
+    if (Real.modelName === 'RosterEntry' && store.some((other) => (
+      same(other.employeeId, doc.employeeId)
+      && same(other.date, doc.date)
+      && same(other.workShiftId, doc.workShiftId)
+    ))) return Object.assign(new Error('duplicate key'), { code: 11000 });
     return null;
   };
 

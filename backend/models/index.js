@@ -25,6 +25,8 @@ module.exports = {
   DiscountLog: require('./DiscountLog'),
   Shift: require('./Shift'),
   Employee: require('./Employee'),
+  WorkShift: require('./WorkShift'),
+  RosterEntry: require('./RosterEntry'),
   SalarySheet: require('./SalarySheet'),
   SalaryAdvance: require('./SalaryAdvance'),
   ExpenseCategory: require('./ExpenseCategory'),

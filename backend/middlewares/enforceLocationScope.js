@@ -8,6 +8,7 @@ function createLocationScopeMiddleware({
   allowCentralLocationSelection = false,
   locationQueryParam = null,
   allowLocationSelectionOnWrite = false,
+  superAdminOnlyLocationSelectionOnWrite = false,
 } = {}) {
   return async function locationScopeMiddleware(req, res, next) {
     try {
@@ -22,7 +23,7 @@ function createLocationScopeMiddleware({
       const isRead = req.method === 'GET';
       const assignedLocationId = locationIdOf(req.user.locationId);
       const canSelectLocation = superAdmin
-        || (canViewAllLocations && (isRead || allowLocationSelectionOnWrite))
+        || (canViewAllLocations && (isRead || (allowLocationSelectionOnWrite && !superAdminOnlyLocationSelectionOnWrite)))
         || (allowCentralLocationSelection && req.user.location?.type === 'CENTRAL');
       const selectedLocationId = locationQueryParam
         ? req.query[locationQueryParam] || req.body?.[locationQueryParam] || req.query.selectedOutletId || null
@@ -116,6 +117,12 @@ enforceLocationScope.forAccountingRead = createLocationScopeMiddleware({
 enforceLocationScope.forExpenseWrite = createLocationScopeMiddleware({
   locationQueryParam: 'locationId',
   allowLocationSelectionOnWrite: true,
+});
+enforceLocationScope.forWorkRostering = createLocationScopeMiddleware({
+  allLocationsOnRead: true,
+  locationQueryParam: 'locationId',
+  allowLocationSelectionOnWrite: true,
+  superAdminOnlyLocationSelectionOnWrite: true,
 });
 
 module.exports = enforceLocationScope;

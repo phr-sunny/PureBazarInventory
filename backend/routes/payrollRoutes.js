@@ -1,7 +1,9 @@
 const express = require('express');
 const { body, param, query } = require('express-validator');
 const payrollController = require('../controllers/payrollController');
+const rosterController = require('../controllers/rosterController');
 const salarySheetController = require('../controllers/salarySheetController');
+const workShiftController = require('../controllers/workShiftController');
 const authMiddleware = require('../middlewares/authMiddleware');
 const authorizeMiddleware = require('../middlewares/authorizeMiddleware');
 const enforceLocationScope = require('../middlewares/enforceLocationScope');
@@ -24,9 +26,16 @@ const employeeFields = (optional) => {
     body('designation').optional().isString().trim().isLength({ max: 100 }),
     body('department').optional().isString().trim().isLength({ max: 100 }),
     body('hireDate').optional().isISO8601({ strict: true }),
+    body('userId').optional({ nullable: true }).isMongoId(),
+    body('locationId').optional({ nullable: true }).isMongoId(),
+    body('employmentType').optional({ nullable: true }).isIn(['full-time', 'part-time']),
+    body('isStudent').optional({ nullable: true }).isBoolean().toBoolean(),
+    body('notes').optional({ nullable: true }).isString().trim().isLength({ max: 1000 }),
     body('status').optional().isIn(['ACTIVE', 'INACTIVE']),
   ];
 };
+
+const workShiftLocation = enforceLocationScope.forWorkRostering;
 
 router.get('/employees', can('employees:read'), [
   query('status').optional().isIn(['ACTIVE', 'INACTIVE']),
@@ -35,6 +44,51 @@ router.post('/employees', can('employees:write'), employeeFields(false),
   validateRequest, payrollController.createEmployee);
 router.patch('/employees/:id', can('employees:write'), [mongoId('id'), ...employeeFields(true)],
   validateRequest, payrollController.updateEmployee);
+router.get('/employee-users', ...can('employees:write'), workShiftLocation, [
+  query('locationId').optional().isMongoId(),
+], validateRequest, payrollController.listLinkableUsers);
+
+router.get('/work-shifts', can('hr.work-shifts:read'), workShiftLocation, [
+  query('locationId').optional().isMongoId(),
+], validateRequest, workShiftController.listWorkShifts);
+router.post('/work-shifts', can('hr.work-shifts:write'), workShiftLocation, [
+  body('name').isString().trim().isLength({ min: 1, max: 100 }),
+  body('startTime').matches(/^([01]\d|2[0-3]):[0-5]\d$/),
+  body('endTime').matches(/^([01]\d|2[0-3]):[0-5]\d$/),
+  body('locationId').optional().isMongoId(),
+], validateRequest, workShiftController.createWorkShift);
+router.patch('/work-shifts/:id', can('hr.work-shifts:write'), workShiftLocation, [
+  mongoId('id'),
+  body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
+  body('startTime').optional().matches(/^([01]\d|2[0-3]):[0-5]\d$/),
+  body('endTime').optional().matches(/^([01]\d|2[0-3]):[0-5]\d$/),
+  body('isActive').optional().isBoolean().toBoolean(),
+  body('locationId').optional().isMongoId(),
+], validateRequest, workShiftController.updateWorkShift);
+
+router.get('/my-roster', ...can('hr.shift-roster:read'), rosterController.myUpcomingRoster);
+router.get('/roster', can('hr.shift-roster:read'), workShiftLocation, [
+  query('weekStart').matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+  query('locationId').optional().isMongoId(),
+], validateRequest, rosterController.listRoster);
+router.post('/roster', can('hr.shift-roster:write'), workShiftLocation, [
+  body('employeeId').isMongoId(),
+  body('workShiftId').isMongoId(),
+  body('date').matches(/^\d{4}-\d{2}-\d{2}$/).isISO8601({ strict: true }),
+  body('notes').optional().isString().trim().isLength({ max: 500 }),
+  body('locationId').optional().isMongoId(),
+], validateRequest, rosterController.assignShift);
+router.delete('/roster/:id', can('hr.shift-roster:write'), workShiftLocation, [
+  mongoId('id'),
+  query('locationId').optional().isMongoId(),
+], validateRequest, rosterController.removeShift);
+router.post('/roster/copy-last-week', can('hr.shift-roster:write'), workShiftLocation, [
+  body('weekStart').custom((value) => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Week start must be a date in YYYY-MM-DD format');
+    return true;
+  }),
+  body('locationId').optional().isMongoId(),
+], validateRequest, rosterController.copyLastWeek);
 
 router.get('/advances', can('payroll:read'), [
   query('employeeId').optional().isMongoId(),

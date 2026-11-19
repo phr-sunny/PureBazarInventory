@@ -10,6 +10,10 @@ const employeeSchema = new mongoose.Schema({
   baseSalary: { type: Number, required: true, min: 0, set: (value) => Number(Number(value).toFixed(2)) },
   hireDate: { type: Date, default: Date.now },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
+  employmentType: { type: String, enum: ['full-time', 'part-time'] },
+  isStudent: { type: Boolean },
+  notes: { type: String, trim: true, maxlength: 1000 },
   status: { type: String, enum: ['ACTIVE', 'INACTIVE'], default: 'ACTIVE', required: true },
 }, { timestamps: true });
 

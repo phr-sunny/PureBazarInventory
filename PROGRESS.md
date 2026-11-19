@@ -715,3 +715,8 @@
 	- Files: Stock adjustment Box/Pieces conversion and register formatting; product edit modal and update API validation; populated cashier names in sales history; vendor registration and KYB success toasts; responsive Salary Sheet table and mobile cards.
 	- Decisions: adjustment values continue through existing StockMovement package quantities and posting rules; no Stock Adjustment print view exists in the app to update. Product updates reject stock-related fields and preserve price history/audit checks.
 	- Validation: backend Jest passes (46 suites, 337 tests); focused stock conversion tests pass (13); frontend production build passes.
+
+- [x] S1 Work shifts and roster
+	- Files: Employee work-location/employment fields and login-link validation; WorkShift and RosterEntry models; outlet-scoped shift and roster APIs; Work Shifts and weekly Shift Roster screens with mobile cards; role-permission matrix entries; overlap, duplicate, location, self-view, copy, and audit tests.
+	- Decisions: Keep cashier Shift / Day Close unchanged; only Super Admin may write outside the assigned location; permissions are added but not granted automatically.
+	- Validation: backend Jest passes (47 suites, 344 tests); frontend production build passes. Frontend tests remain 28/29 because of nine pre-existing untranslated strings outside this change.
