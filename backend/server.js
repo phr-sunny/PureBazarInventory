@@ -106,6 +106,11 @@ async function startServer() {
 
 if (require.main === module) {
   startServer();
+  startSettlementJob();
+
+  app.listen(env.PORT, () => {
+    console.log(`PureBazar API listening on port ${env.PORT}`);
+  });
 }
 
 module.exports = app;
