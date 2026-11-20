@@ -52,6 +52,9 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api', stockRoutes);
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'PureBazar API is running successfully!' });
+});
 app.use('/api', healthRoutes);
 app.use((req, res, next) => {
   const error = new Error('Route not found');
@@ -99,18 +102,10 @@ async function startServer() {
   app.listen(env.PORT, () => {
     console.log(`PureBazar API listening on port ${env.PORT}`);
   });
-  app.get('/', (req, res) => {
-  res.json({ success: true, message: "PureBazar API is running successfully!" });
-});
 }
 
 if (require.main === module) {
   startServer();
-  startSettlementJob();
-
-  app.listen(env.PORT, () => {
-    console.log(`PureBazar API listening on port ${env.PORT}`);
-  });
 }
 
 module.exports = app;
