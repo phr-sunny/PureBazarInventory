@@ -32,7 +32,7 @@ productSchema.pre('validate', function calculateMargin() {
     this.barcode = generateInternalBarcode();
     this.barcodeSource = 'internal';
   } else if (!this.barcodeSource) {
-    this.barcodeSource = this.barcode.startsWith('PB-') ? 'internal' : 'manufacturer';
+    this.barcodeSource = this.barcode.startsWith('PB') ? 'internal' : 'manufacturer';
   }
   this.barcodes = normalizeBarcodes(this.barcode, this.barcodes)
     .filter((barcode) => barcode !== this.barcode);

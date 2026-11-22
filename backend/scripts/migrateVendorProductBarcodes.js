@@ -74,7 +74,7 @@ async function migrateVendorProductBarcodes({ apply = false } = {}) {
 
   const writes = products.map((product) => {
     const hadBarcode = Boolean(String(product.barcode || '').trim());
-    const legacyUnmarkedCode = !product.barcodeSource && hadBarcode && !String(product.barcode).startsWith('PB-');
+    const legacyUnmarkedCode = !product.barcodeSource && hadBarcode && !String(product.barcode).startsWith('PB');
     const shouldGenerate = !hadBarcode || legacyUnmarkedCode;
     const barcode = shouldGenerate
       ? generateInternalBarcode()
@@ -83,7 +83,7 @@ async function migrateVendorProductBarcodes({ apply = false } = {}) {
       ? 'internal'
       : ['manufacturer', 'internal'].includes(product.barcodeSource)
         ? product.barcodeSource
-        : (barcode.startsWith('PB-') ? 'internal' : 'manufacturer');
+        : (barcode.startsWith('PB') ? 'internal' : 'manufacturer');
     return {
       updateOne: {
         filter: { _id: product._id },

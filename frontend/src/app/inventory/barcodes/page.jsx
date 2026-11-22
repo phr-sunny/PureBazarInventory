@@ -43,7 +43,7 @@ export default function BarcodesPage() {
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     const printable = printAll ? products : products.filter((product) => (
-      product.barcodeSource === 'internal' || (!product.barcodeSource && String(product.barcode || '').startsWith('PB-'))
+      product.barcodeSource === 'internal' || (!product.barcodeSource && String(product.barcode || '').startsWith('PB'))
     ));
     return query
       ? printable.filter((product) => `${product.name} ${product.barcode} ${(product.barcodes || []).join(' ')}`.toLowerCase().includes(query))

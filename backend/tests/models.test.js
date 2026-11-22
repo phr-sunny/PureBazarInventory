@@ -62,7 +62,7 @@ describe('Mongoose models', () => {
 
     await product.validate();
 
-    expect(product.barcode).toMatch(/^PB-[A-F0-9]{16}$/);
+    expect(product.barcode).toMatch(/^PB[A-F0-9]{16}$/);
     expect(product.barcodeSource).toBe('internal');
     expect(product.productGroupId).toEqual(product._id);
     expect(models.Product.schema.indexes().some(([fields, options]) => (

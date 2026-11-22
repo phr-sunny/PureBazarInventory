@@ -24,7 +24,7 @@ function formFor(product) {
     vatRate: product?.vatRate == null ? '' : String(product.vatRate),
     barcode: product?.barcode || '',
     barcodes: (product?.barcodes || []).join('\n'),
-    barcodeSource: product?.barcodeSource || (String(product?.barcode || '').startsWith('PB-') ? 'internal' : 'manufacturer'),
+    barcodeSource: product?.barcodeSource || (String(product?.barcode || '').startsWith('PB') ? 'internal' : 'manufacturer'),
   };
 }
 

@@ -1,6 +1,6 @@
 const { randomBytes } = require('crypto');
 
-const INTERNAL_BARCODE_PREFIX = 'PB-';
+const INTERNAL_BARCODE_PREFIX = 'PB';
 
 function generateInternalBarcode() {
   return `${INTERNAL_BARCODE_PREFIX}${randomBytes(8).toString('hex').toUpperCase()}`;
