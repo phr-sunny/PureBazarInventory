@@ -735,3 +735,8 @@
 	- Files: Vendor-scoped primary/extra barcodes and source, PB- internal barcode generation, FIFO POS vendor selection, vendor-copy flows for Products and GRN, vendor-aware stock/search displays, label filtering/output, dry-run migration, and focused tests.
 	- Decisions: Internal barcodes use the reserved `PB-` prefix; check-digit errors warn but do not block manufacturer codes; POS choice follows the oldest positive GRN/transfer-in lot. The migration defaults to dry run and has not been run against any database.
 	- Validation: Backend Jest passes (51 suites, 375 tests); frontend production build passes. Frontend tests pass 31/32; the remaining failure is the existing i18n assertion for nine untranslated strings. `git diff --check` passes.
+
+- [x] Searchable vendor input in Add vendor copy
+	- Files: Shared `vendor-autocomplete.jsx` used by Add New Product and the Add vendor copy modal; product-group vendor-copy exclusions and focused frontend utility tests.
+	- Decisions: Add vendor copy keeps editable prefills for vendor price and MRP, excludes the source/current vendor and vendors already represented in the same product group, and reports a clear duplicate-vendor message. No billEngine or database migration changes.
+	- Validation: Frontend production build passes. Focused vendor-copy tests pass; the full frontend suite passes 33/34, with the remaining i18n failure limited to eight unrelated existing untranslated literals. No database migration was run.

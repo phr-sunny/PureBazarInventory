@@ -215,7 +215,8 @@ export default function ProductsPage() {
         <AddVendorProductModal
           open={Boolean(addingVendorTo)}
           product={addingVendorTo}
-          vendors={vendors}
+          products={products}
+          token={token}
           onClose={() => setAddingVendorTo(null)}
           onSubmit={addVendorCopy}
         />
