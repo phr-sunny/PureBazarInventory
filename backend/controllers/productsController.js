@@ -2,9 +2,10 @@ const {
   AuditLog, Brand, Category, PriceHistory, Product, Settings, Unit, Vendor,
 } = require('../models');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
+const { createVendorCopy } = require('../services/vendorProductCopy');
 
 const editableFields = [
-  'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
+  'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId', 'barcode', 'barcodes', 'barcodeSource',
   'vendorPrice', 'mrp', 'vatApplicable', 'vatRate', 'unitsPerPackage', 'subUnitPriceOverride',
 ];
 const creationFields = editableFields.filter((field) => field !== 'unitValue');
@@ -34,18 +35,20 @@ function productData(product) {
 function productSnapshot(product) {
   const data = productData(product);
   return Object.fromEntries([
-    'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId',
+    'name', 'sku', 'categoryId', 'brandId', 'unitId', 'unitValue', 'ownerType', 'vendorId', 'productGroupId',
     'vendorPrice', 'mrp', 'margin', 'vatApplicable', 'vatRate', 'barcode',
-    'unitsPerPackage', 'subUnitPriceOverride', 'subUnitPrice',
+    'barcodes', 'barcodeSource', 'unitsPerPackage', 'subUnitPriceOverride', 'subUnitPrice',
   ].filter((field) => data[field] !== undefined)
-    .map((field) => [field, data[field]?.toString && field.endsWith('Id') ? data[field].toString() : data[field]]));
+    .map((field) => [field, data[field]?.toString && (field.endsWith('Id') || field === 'productGroupId')
+      ? data[field].toString() : data[field]]));
 }
 
-function productOutput(product, discountPercent, labels = new Map()) {
+function productOutput(product, discountPercent, labels = new Map(), vendors = new Map()) {
   const data = productData(product);
   const maximumDiscount = Math.round((data.mrp * discountPercent / 100 + Number.EPSILON) * 100) / 100;
   const result = productSnapshot(data);
   result.id = data._id.toString();
+  result.vendorName = vendors.get(data.vendorId?.toString()) || null;
   Object.assign(result, displayFields(data, labels));
   result.marginWarning = data.margin < maximumDiscount;
   result.createdAt = data.createdAt;
@@ -56,6 +59,17 @@ function productOutput(product, discountPercent, labels = new Map()) {
 async function discountPercent() {
   const settings = await Settings.findOne({ singleton: 'global' }).lean();
   return settings?.shareholderDiscountPercent ?? 5;
+}
+
+async function vendorNameMap(products) {
+  const ids = [...new Set(products.map((product) => product.vendorId?.toString()).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const vendors = await Vendor.find({ _id: { $in: ids } }).select('_id name shopName').lean();
+  return new Map(vendors.map((vendor) => [vendor._id.toString(), vendor.shopName || vendor.name]));
+}
+
+function barcodeFilter(value) {
+  return { $or: [{ barcode: value }, { barcodes: value }] };
 }
 
 async function validateReferences(data) {
@@ -90,10 +104,10 @@ async function listProducts(req, res, next) {
       Product.find().sort({ name: 1 }).lean(),
       discountPercent(),
     ]);
-    const labels = await unitLabelMap(products);
+    const [labels, vendors] = await Promise.all([unitLabelMap(products), vendorNameMap(products)]);
     return res.json({
       success: true,
-      products: products.map((product) => productOutput(product, percent, labels)),
+      products: products.map((product) => productOutput(product, percent, labels, vendors)),
       marginWarningPercent: percent,
     });
   } catch (error) {
@@ -108,8 +122,8 @@ async function getProduct(req, res, next) {
       discountPercent(),
     ]);
     if (!product) throw statusError('Product not found', 404);
-    const labels = await unitLabelMap([product]);
-    return res.json({ success: true, product: productOutput(product, percent, labels) });
+    const [labels, vendors] = await Promise.all([unitLabelMap([product]), vendorNameMap([product])]);
+    return res.json({ success: true, product: productOutput(product, percent, labels, vendors) });
   } catch (error) {
     return next(error);
   }
@@ -131,7 +145,7 @@ async function createProduct(req, res, next) {
     });
     return res.status(201).json({
       success: true,
-      product: productOutput(product, await discountPercent(), await unitLabelMap([product])),
+      product: productOutput(product, await discountPercent(), await unitLabelMap([product]), await vendorNameMap([product])),
     });
   } catch (error) {
     return handleError(error, next);
@@ -182,11 +196,57 @@ async function updateProduct(req, res, next) {
 
     return res.json({
       success: true,
-      product: productOutput(product, await discountPercent(), await unitLabelMap([product])),
+      product: productOutput(product, await discountPercent(), await unitLabelMap([product]), await vendorNameMap([product])),
     });
   } catch (error) {
     return handleError(error, next);
   }
 }
 
-module.exports = { listProducts, getProduct, createProduct, updateProduct };
+async function findBarcodeMatches(req, res, next) {
+  try {
+    const value = String(req.params.barcode || '').trim();
+    const products = await Product.find(barcodeFilter(value)).sort({ name: 1 }).lean();
+    const vendors = await vendorNameMap(products);
+    return res.json({
+      success: true,
+      products: products.map((product) => ({
+        id: product._id.toString(),
+        name: product.name,
+        barcode: product.barcode,
+        vendorId: product.vendorId?.toString() || null,
+        vendorName: vendors.get(product.vendorId?.toString()) || null,
+      })),
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function addVendorCopy(req, res, next) {
+  try {
+    const { copy, vendor } = await createVendorCopy({
+      sourceProductId: req.params.id,
+      vendorId: req.body.vendorId,
+      vendorPrice: req.body.vendorPrice,
+      mrp: req.body.mrp,
+      actorId: req.user._id,
+      ipAddress: req.ip,
+    });
+    return res.status(201).json({
+      success: true,
+      product: productOutput(
+        copy,
+        await discountPercent(),
+        await unitLabelMap([copy]),
+        new Map([[vendor._id.toString(), vendor.shopName || vendor.name]]),
+      ),
+    });
+  } catch (error) {
+    return handleError(error, next);
+  }
+}
+
+module.exports = {
+  addVendorCopy, createProduct, findBarcodeMatches, getProduct, listProducts, updateProduct,
+};

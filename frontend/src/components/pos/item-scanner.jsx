@@ -111,7 +111,7 @@ export default function ItemScanner({ onAdd, selectedOutletId }) {
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-slate-900">{productLabel(item)}</span>
-                  <span className="flex items-center gap-1 text-xs text-slate-500"><Barcode size={12} /> {item.barcode}</span>
+                  <span className="flex items-center gap-1 text-xs text-slate-500"><Barcode size={12} /> {item.barcode} {item.vendorName ? `· ${item.vendorName}` : ''}</span>
                 </span>
                 <span className="shrink-0 text-right text-xs">
                   <span className="block font-semibold text-slate-900">৳{Number(item.mrp).toFixed(2)}</span>

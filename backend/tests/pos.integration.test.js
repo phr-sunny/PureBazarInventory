@@ -332,10 +332,12 @@ describe('POS checkout API', () => {
       payments: [{ method: 'CASH', amount: 90 }, { method: 'CARD', amount: 100 }],
       shareholderId: shareholderId.toString(),
     });
+
     expect(response.status).toBe(201);
     expect(response.body.order).toMatchObject({
       paymentStatus: 'PAID', subtotal: 200, otherDiscountAmount: 10, grandTotal: 190,
     });
+
     expect(response.body.order.memberId.toString()).toBe(shareholderId.toString());
     expect(response.body.receipt.lines[0]).toMatchObject({
       quantity: 2, subtotal: 200, billDiscountAmount: 10, total: 190,
@@ -347,6 +349,29 @@ describe('POS checkout API', () => {
       locationId: outletId,
     });
     expect(db.discounts[0]).toMatchObject({ amount: 10, reason: 'Offer' });
+  });
+
+  it('posts the vendor ledger against the vendor of the selected product copy', async () => {
+    const selectedVendorId = new mongoose.Types.ObjectId('65b000000000000000000009');
+    models.Product.find.mockReturnValue(query([{
+      ...product,
+      vendorId: selectedVendorId,
+      vendorPrice: 72,
+    }]));
+
+    const response = await checkout({
+      items: line(),
+      payments: [{ method: 'CASH', amount: 100 }],
+    });
+
+    expect(response.status).toBe(201);
+    expect(db.ledgers).toHaveLength(1);
+    expect(db.ledgers[0]).toMatchObject({
+      vendorId: selectedVendorId,
+      productId,
+      vendorPayable: 72,
+      companyNet: 28,
+    });
   });
 
   it('ignores client outlet selections and uses only the assigned outlet for order, stock, and ledger', async () => {

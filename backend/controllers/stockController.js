@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
-const { Location, Product, StockMovement } = require('../models');
+const {
+  Location, Product, StockMovement, Vendor,
+} = require('../models');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 
 async function getWarehouseStock(req, res, next) {
@@ -22,8 +24,13 @@ async function getWarehouseStock(req, res, next) {
       { $sort: { _id: 1 } },
     ]);
     const products = await Product.find({ _id: { $in: grouped.map(({ _id }) => _id) } })
-      .select('_id name barcode ownerType vendorId unitId unitsPerPackage').lean();
+      .select('_id name barcode barcodes ownerType vendorId unitId unitsPerPackage').lean();
     const labels = await unitLabelMap(products);
+    const vendorIds = [...new Set(products.map((product) => product.vendorId?.toString()).filter(Boolean))];
+    const vendors = vendorIds.length
+      ? await Vendor.find({ _id: { $in: vendorIds } }).select('_id name shopName').lean()
+      : [];
+    const vendorNames = new Map(vendors.map((vendor) => [vendor._id.toString(), vendor.shopName || vendor.name]));
     const productMap = new Map(products.map((product) => [product._id.toString(), product]));
     const stock = grouped.map(({ _id, quantity }) => {
       const product = productMap.get(_id.toString());
@@ -31,8 +38,10 @@ async function getWarehouseStock(req, res, next) {
         productId: _id.toString(),
         productName: product?.name,
         barcode: product?.barcode,
+        barcodes: product?.barcodes || [],
         ownerType: product?.ownerType,
         vendorId: product?.vendorId?.toString() || null,
+        vendorName: vendorNames.get(product?.vendorId?.toString()) || null,
         unitsPerPackage: product?.unitsPerPackage || 1,
         packageUnitName: product ? displayFields(product, labels).packageUnitName : null,
         quantity: Math.round(quantity * 1e6) / 1e6,
@@ -59,7 +68,7 @@ async function getOutletProducts(req, res, next) {
       throw error;
     }
     const [products, grouped] = await Promise.all([
-      Product.find().select('_id name sku barcode unitsPerPackage unitId').sort({ name: 1 }).lean(),
+      Product.find().select('_id name sku barcode barcodes ownerType vendorId unitsPerPackage unitId').sort({ name: 1 }).lean(),
       StockMovement.aggregate([
         { $match: { warehouseId: new mongoose.Types.ObjectId(warehouseId) } },
         { $group: { _id: '$productId', quantity: { $sum: '$quantity' } } },
@@ -67,11 +76,20 @@ async function getOutletProducts(req, res, next) {
     ]);
     const stockByProduct = new Map(grouped.map(({ _id, quantity }) => [_id.toString(), quantity]));
     const labels = await unitLabelMap(products);
+    const vendorIds = [...new Set(products.map((product) => product.vendorId?.toString()).filter(Boolean))];
+    const vendors = vendorIds.length
+      ? await Vendor.find({ _id: { $in: vendorIds } }).select('_id name shopName').lean()
+      : [];
+    const vendorNames = new Map(vendors.map((vendor) => [vendor._id.toString(), vendor.shopName || vendor.name]));
     const inventory = products.map((product) => ({
       productId: product._id.toString(),
       name: product.name,
       sku: product.sku || '',
       barcode: product.barcode || '',
+      barcodes: product.barcodes || [],
+      ownerType: product.ownerType,
+      vendorId: product.vendorId?.toString() || null,
+      vendorName: vendorNames.get(product.vendorId?.toString()) || null,
       unitsPerPackage: product.unitsPerPackage || 1,
       packageUnitName: displayFields(product, labels).packageUnitName,
       stock: Math.round((stockByProduct.get(product._id.toString()) || 0) * 1e6) / 1e6,

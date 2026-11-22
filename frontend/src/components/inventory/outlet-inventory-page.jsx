@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Card, Input, Select, Table } from '@/components/ui';
+import { Badge, Card, Input, Select, Table } from '@/components/ui';
 import { getLocations, getOutletProducts } from '@/services/stock';
 import { formatStock } from '@/services/stock-units.cjs';
 import { T } from '@/i18n/language-provider';
@@ -64,13 +64,14 @@ export default function OutletInventoryPage() {
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query
-      ? products.filter((item) => `${item.name} ${item.sku} ${item.barcode}`.toLowerCase().includes(query))
+      ? products.filter((item) => `${item.name} ${item.sku} ${item.barcode} ${(item.barcodes || []).join(' ')}`.toLowerCase().includes(query))
       : products;
   }, [products, search]);
   const columns = [
     { key: 'name', label: 'Product' },
     { key: 'sku', label: 'SKU', render: (sku) => sku || '—' },
     { key: 'barcode', label: 'Barcode', render: (barcode) => barcode || '—' },
+    { key: 'vendorName', label: 'Vendor', render: (name) => name ? <Badge tone="info">{name}</Badge> : '—' },
     {
       key: 'stock',
       label: 'Stock',

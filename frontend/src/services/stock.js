@@ -59,5 +59,6 @@ export const getGoodsReceives = (token, selectedOutletId) => api.get('/goods-rec
   params: selectedOutletId && selectedOutletId !== 'all' ? { selectedOutletId } : undefined,
 });
 export const createGoodsReceive = (token, payload) => api.post('/goods-receives', payload, authConfig(token));
+export const createReceiveVendorCopy = (token, payload) => api.post('/goods-receives/vendor-copy', payload, authConfig(token));
 export const approveGoodsReceive = (token, id) => api.post(`/goods-receives/${id}/approve`, {}, authConfig(token));
 export const getPrintableGoodsReceive = (token, id) => api.get(`/goods-receives/${id}/print`, authConfig(token));

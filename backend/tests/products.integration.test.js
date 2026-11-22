@@ -7,11 +7,11 @@ jest.mock('../models', () => ({
   Brand: { exists: jest.fn() },
   Category: { exists: jest.fn() },
   PriceHistory: { create: jest.fn() },
-  Product: { create: jest.fn(), find: jest.fn(), findById: jest.fn() },
+  Product: { create: jest.fn(), exists: jest.fn(), find: jest.fn(), findById: jest.fn() },
   Settings: { findOne: jest.fn() },
   Unit: { exists: jest.fn(), find: jest.fn() },
   User: { findById: jest.fn() },
-  Vendor: { exists: jest.fn() },
+  Vendor: { exists: jest.fn(), find: jest.fn(), findById: jest.fn() },
 }));
 
 const {
@@ -48,6 +48,7 @@ const product = {
 
 function chain(value) {
   const result = {
+    select: jest.fn(() => result),
     sort: jest.fn(() => result),
     lean: jest.fn(() => Promise.resolve(value)),
   };
@@ -79,6 +80,7 @@ describe('product endpoints', () => {
     Brand.exists.mockResolvedValue(true);
     Unit.exists.mockResolvedValue(true);
     Vendor.exists.mockResolvedValue(true);
+    Vendor.find.mockReturnValue(chain([]));
     AuditLog.create.mockResolvedValue({});
     PriceHistory.create.mockResolvedValue({});
     Product.find.mockReturnValue(chain([product]));
@@ -174,6 +176,60 @@ describe('product endpoints', () => {
     }));
     expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
       action: 'UPDATE', entity: 'Product', metadata: { priceChanged: true },
+    }));
+  });
+
+  it('creates a vendor copy with shared identifiers and records price history and audit', async () => {
+    const newVendorId = '65b000000000000000000009';
+    const source = {
+      ...product,
+      productGroupId: productId,
+      unitsPerPackage: 12,
+      barcode: 'PB-TEA',
+      barcodes: ['01234567'],
+      barcodeSource: 'internal',
+      vatApplicable: true,
+      vatRate: 5,
+      save: jest.fn(),
+    };
+    const vendor = { _id: newVendorId, name: 'New vendor', shopName: 'New shop' };
+    Product.findById.mockResolvedValue(source);
+    Product.exists.mockResolvedValue(false);
+    Vendor.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(vendor) });
+    Vendor.find.mockReturnValue(chain([vendor]));
+    Product.create.mockImplementation(async (input) => ({
+      ...source,
+      ...input,
+      _id: '65b00000000000000000000a',
+      margin: input.mrp - input.vendorPrice,
+    }));
+
+    const response = await request(app).post(`/api/products/${productId}/add-vendor`).set(auth).send({
+      vendorId: newVendorId, vendorPrice: 80, mrp: 110,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.product).toMatchObject({
+      productGroupId: productId,
+      vendorId: newVendorId,
+      vendorName: 'New shop',
+      barcode: 'PB-TEA',
+      barcodes: ['01234567'],
+      barcodeSource: 'internal',
+      unitsPerPackage: 12,
+      vatApplicable: true,
+      vatRate: 5,
+      vendorPrice: 80,
+      mrp: 110,
+    });
+    expect(PriceHistory.create).toHaveBeenCalledWith(expect.objectContaining({
+      oldVendorPrice: product.vendorPrice,
+      newVendorPrice: 80,
+    }));
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'CREATE',
+      entity: 'Product',
+      metadata: { copiedFrom: productId },
     }));
   });
 

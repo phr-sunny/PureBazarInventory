@@ -201,6 +201,13 @@ router.post('/goods-receives', scopedWrite, [
   lineQuantity('rejectedQuantity', 0),
   lineQuantities,
 ], validateRequest, goodsReceiveController.createGoodsReceive);
+router.post('/goods-receives/vendor-copy', scopedWrite, [
+  body('sourceProductId').isMongoId().withMessage('A valid source product ID is required'),
+  body('vendorId').isMongoId().withMessage('A valid vendor ID is required'),
+  body('vendorPrice').isFloat({ min: 0 }).toFloat().withMessage('Vendor price must be zero or greater'),
+  body('mrp').isFloat({ min: 0 }).toFloat().custom((value, { req }) => value >= Number(req.body.vendorPrice))
+    .withMessage('MRP must be greater than or equal to vendor price'),
+], validateRequest, goodsReceiveController.createReceiveVendorCopy);
 router.get('/goods-receives/:id', scopedRead, [id], validateRequest, goodsReceiveController.getGoodsReceive);
 router.get('/goods-receives/:id/print', scopedRead, [id], validateRequest, goodsReceiveController.getGoodsReceive);
 router.put('/goods-receives/:id', scopedWrite, [

@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import useToastMessages from '@/hooks/use-toast-messages';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Store } from 'lucide-react';
 import { Badge, Button, Input, Table } from '@/components/ui';
 import ProductFormModal from '@/components/inventory/product-form-modal';
 import ProductEditModal from '@/components/inventory/product-edit-modal';
-import { createProduct, getProducts, updateProduct } from '@/services/inventory';
+import AddVendorProductModal from '@/components/inventory/add-vendor-product-modal';
+import { addVendorProduct, createProduct, getProducts, updateProduct } from '@/services/inventory';
 import { getVendors } from '@/services/vendor';
 import { T } from '@/i18n/language-provider';
 import CameraBarcodeScanner from '@/components/common/camera-barcode-scanner';
@@ -21,6 +22,7 @@ const columns = [
   { key: 'name', label: 'Product', render: (value, product) => product.displayName || value },
   { key: 'barcode', label: 'Barcode' },
   { key: 'ownerType', label: 'Owner', render: (value) => value === 'VENDOR' ? 'Vendor' : 'Company' },
+  { key: 'vendorName', label: 'Vendor', render: (value) => value ? <Badge tone="info">{value}</Badge> : '—' },
   { key: 'vendorPrice', label: 'Vendor price', render: money },
   { key: 'mrp', label: 'MRP', render: money },
   { key: 'margin', label: 'Margin', render: (value, product) => (
@@ -45,6 +47,7 @@ export default function ProductsPage() {
   const [vendorFilter, setVendorFilter] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [addingVendorTo, setAddingVendorTo] = useState(null);
   const permissions = user?.permissions || [];
   const canRead = permissions.includes('*') || permissions.includes('products:read');
   const canWrite = permissions.includes('*') || permissions.includes('products:write');
@@ -52,9 +55,14 @@ export default function ProductsPage() {
     key: 'actions',
     label: 'Actions',
     render: (_, product) => (
+      <div className="flex flex-wrap gap-2">
       <Button size="sm" variant="secondary" onClick={() => setEditingProduct(product)}>
         <Pencil size={14} /> Edit
       </Button>
+      <Button size="sm" variant="secondary" onClick={() => setAddingVendorTo(product)}>
+        <Store size={14} /> Add vendor
+      </Button>
+      </div>
     ),
   }] : columns;
 
@@ -92,7 +100,11 @@ export default function ProductsPage() {
       : null;
     return products.filter((product) => (
       (!vendorIds || vendorIds.has(product.vendorId))
-      && (!query || `${product.name} ${product.barcode}`.toLowerCase().includes(query))
+      && (!query || `${product.name} ${product.barcode} ${(product.barcodes || []).join(' ')}`.toLowerCase().includes(query))
+    )).sort((a, b) => (
+      String(a.productGroupId || a.id).localeCompare(String(b.productGroupId || b.id))
+      || String(a.vendorName || '').localeCompare(String(b.vendorName || ''))
+      || a.name.localeCompare(b.name)
     ));
   }, [products, search, vendorFilter, vendors]);
 
@@ -112,6 +124,26 @@ export default function ProductsPage() {
       product.id === productId ? data.product : product
     )));
     setNotice('Product updated successfully.');
+  }
+
+  async function addVendorCopy(productId, payload) {
+    const { data } = await addVendorProduct(token, productId, payload);
+    setProducts((current) => [...current, data.product].sort((a, b) => (
+      String(a.productGroupId || a.id).localeCompare(String(b.productGroupId || b.id))
+    )));
+    setAddingVendorTo(null);
+    setNotice('Vendor copy created successfully.');
+  }
+
+  function openExistingProduct(id) {
+    setFormOpen(false);
+    setEditingProduct(products.find((product) => product.id === id) || null);
+  }
+
+  function openAddVendor(id) {
+    setFormOpen(false);
+    setEditingProduct(null);
+    setAddingVendorTo(products.find((product) => product.id === id) || null);
   }
 
   if (!initialized || loading) return <p role="status" className="py-10 text-center text-sm text-slate-500"><T>{"Loading products..."}</T></p>;
@@ -163,6 +195,8 @@ export default function ProductsPage() {
           token={token}
           permissions={permissions}
           marginWarningPercent={marginWarningPercent}
+          onOpenExisting={openExistingProduct}
+          onAddVendor={openAddVendor}
         />
       )}
       {canWrite && (
@@ -173,6 +207,17 @@ export default function ProductsPage() {
           product={editingProduct}
           token={token}
           permissions={permissions}
+          onOpenExisting={openExistingProduct}
+          onAddVendor={openAddVendor}
+        />
+      )}
+      {canWrite && (
+        <AddVendorProductModal
+          open={Boolean(addingVendorTo)}
+          product={addingVendorTo}
+          vendors={vendors}
+          onClose={() => setAddingVendorTo(null)}
+          onSubmit={addVendorCopy}
         />
       )}
     </section>

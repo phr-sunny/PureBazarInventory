@@ -4,7 +4,7 @@ const productId = new mongoose.Types.ObjectId();
 const unitId = new mongoose.Types.ObjectId();
 jest.mock('../models', () => ({
   Product: { findOne: jest.fn(), find: jest.fn() },
-  StockMovement: { aggregate: jest.fn() },
+  StockMovement: { aggregate: jest.fn(), find: jest.fn() },
   Unit: { find: jest.fn() },
 }));
 jest.mock('../services/posBillService', () => ({ statusError: (m, s) => Object.assign(new Error(m), { status: s }) }));
@@ -18,8 +18,10 @@ describe('POS catalog base unit', () => {
       _id: productId, name: 'Egg', unitId, mrp: 120, unitValue: 10, vendorPrice: 100, unitsPerPackage: 12,
     };
     models.Product.find.mockReturnValue({ sort: () => ({ limit: () => ({ lean: async () => [eggs] }) }) });
+    models.StockMovement.find.mockReturnValue({
+      select: () => ({ sort: () => ({ lean: async () => [] }) }),
+    });
     models.Unit.find.mockReturnValue({ select: () => ({ lean: async () => [{ _id: unitId, name: 'Doz', abbreviation: 'Doz' }] }) });
-    models.StockMovement.aggregate.mockResolvedValue([{ _id: productId, quantity: 5 }]);
     const res = { json: jest.fn() };
     await searchItems({ query: { q: 'egg' }, user: {}, locationId: new mongoose.Types.ObjectId() }, res, jest.fn());
 

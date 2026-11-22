@@ -730,3 +730,8 @@
 	- Files: Transfer carrier fields and challan print/audit endpoints; Code 128 barcode output; three-copy A4 challan; outlet challan scan lookup; `showPricesOnChallan` setting and focused tests.
 	- Decisions: Challan number uses the existing transfer number (uppercase final eight ID characters); prices are hidden by default; each print job generates Warehouse, Carrier, and Outlet copies; reprints increment the transfer print count and create a PRINT audit entry. Transfer and challan access remains location-scoped, with the documented all-location role exception for printing.
 	- Validation: backend Jest passes (48 suites, 361 tests); frontend production build passes. Frontend tests pass 29/30; the remaining failure is the existing Bengali translation assertion for nine unrelated strings.
+
+- [x] BC Barcodes and vendor copies
+	- Files: Vendor-scoped primary/extra barcodes and source, PB- internal barcode generation, FIFO POS vendor selection, vendor-copy flows for Products and GRN, vendor-aware stock/search displays, label filtering/output, dry-run migration, and focused tests.
+	- Decisions: Internal barcodes use the reserved `PB-` prefix; check-digit errors warn but do not block manufacturer codes; POS choice follows the oldest positive GRN/transfer-in lot. The migration defaults to dry run and has not been run against any database.
+	- Validation: Backend Jest passes (51 suites, 375 tests); frontend production build passes. Frontend tests pass 31/32; the remaining failure is the existing i18n assertion for nine untranslated strings. `git diff --check` passes.

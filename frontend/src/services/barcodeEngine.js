@@ -36,6 +36,51 @@ function isValidEan13(value) {
   return (10 - (sum % 10)) % 10 === digits[12];
 }
 
+function isValidEan8(value) {
+  const text = String(value || '');
+  if (!/^\d{8}$/.test(text)) return false;
+  const digits = [...text].map(Number);
+  const sum = digits.slice(0, 7).reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === digits[7];
+}
+
+function isValidUpcA(value) {
+  const text = String(value || '');
+  if (!/^\d{12}$/.test(text)) return false;
+  const digits = [...text].map(Number);
+  const sum = digits.slice(0, 11).reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === digits[11];
+}
+
+function isValidRetailBarcode(value) {
+  return isValidEan13(value) || isValidEan8(value) || isValidUpcA(value);
+}
+
+function retailBarcodeWarning(value) {
+  const text = String(value || '').trim();
+  if (!text || text.startsWith('PB-')) return '';
+  if (/^\d{8}$/.test(text) && !isValidEan8(text)) return 'EAN-8 check digit is invalid.';
+  if (/^\d{12}$/.test(text) && !isValidUpcA(text)) return 'UPC-A check digit is invalid.';
+  if (/^\d{13}$/.test(text) && !isValidEan13(text)) return 'EAN-13 check digit is invalid.';
+  return '';
+}
+
+function getEan8Modules(barcode) {
+  if (!isValidEan8(barcode)) throw new Error('A valid EAN-8 barcode is required.');
+  const digits = String(barcode).split('').map(Number);
+  const left = digits.slice(0, 4).map((digit) => EAN_LEFT[digit]).join('');
+  const right = digits.slice(4).map((digit) => EAN_RIGHT[digit]).join('');
+  return `101${left}01010${right}101`.split('').map((module) => module === '1');
+}
+
+function getBarcodeModules(value) {
+  const text = String(value || '');
+  if (isValidEan13(text)) return getEan13Modules(text);
+  if (isValidUpcA(text)) return getEan13Modules(`0${text}`);
+  if (isValidEan8(text)) return getEan8Modules(text);
+  return getCode128Modules(text);
+}
+
 function getEan13Modules(barcode) {
   if (!isValidEan13(barcode)) throw new Error('A valid EAN-13 barcode is required.');
   const digits = String(barcode).split('').map(Number);
@@ -96,7 +141,10 @@ function normalizeLabels(items, labelType) {
   if (!Array.isArray(items) || items.length === 0) throw new Error('Select at least one product to print.');
   const labels = [];
   for (const item of items) {
-    if (!isValidEan13(item.barcode)) throw new Error(`Product "${item.name}" has an invalid EAN-13 barcode.`);
+    const barcode = String(item.barcode || '');
+    if (!barcode || !/^[\x20-\x7E]+$/.test(barcode)) {
+      throw new Error(`Product "${item.name}" has an invalid barcode.`);
+    }
     const copies = Number(item.copies ?? 1);
     if (!Number.isInteger(copies) || copies < 1 || copies > 500) {
       throw new Error('Label copies must be a whole number from 1 to 500.');
@@ -110,7 +158,7 @@ function normalizeLabels(items, labelType) {
     }
     const label = {
       name: labelName(item.name, unitName, item.packageTag),
-      barcode: String(item.barcode),
+      barcode,
       price,
       originalPrice,
     };
@@ -141,7 +189,7 @@ function buildTspl(labels, size) {
     'CLS',
     `TEXT ${size.x},${size.brandY},"${size.key === '50x30' ? '3' : '0'}",0,1,1,"${BRAND_NAME}"`,
     `TEXT ${size.x},${size.nameY},"0",0,1,1,"${name}"`,
-    `BARCODE ${barX},${size.barY},"EAN13",${size.barH},1,0,2,2,"${barcode}"`,
+    `BARCODE ${barX},${size.barY},"${isValidEan13(barcode) ? 'EAN13' : isValidUpcA(barcode) ? 'UPCA' : isValidEan8(barcode) ? 'EAN8' : '128'}",${size.barH},1,0,2,2,"${barcode}"`,
     ...(originalPrice ? [
       `TEXT ${size.x},${size.origY},"0",0,1,1,"BDT ${originalPrice}"`,
       `BAR ${size.x},${size.origY + 8},${(originalPrice.length + 4) * 8},2`,
@@ -168,7 +216,16 @@ function buildEscPos(labels) {
     }
     if (price) appendText(`BDT ${price}\n`);
     output.push(0x1d, 0x48, 0x02, 0x1d, 0x77, 0x02, 0x1d, 0x68, 0x50);
-    output.push(0x1d, 0x6b, 0x43, 0x0c, ...encoder.encode(barcode.slice(0, 12)), 0x0a, 0x0a);
+    if (isValidEan13(barcode)) {
+      output.push(0x1d, 0x6b, 0x43, 0x0c, ...encoder.encode(barcode.slice(0, 12)), 0x0a);
+    } else if (isValidUpcA(barcode)) {
+      output.push(0x1d, 0x6b, 0x41, 0x0b, ...encoder.encode(barcode.slice(0, 11)), 0x0a);
+    } else if (isValidEan8(barcode)) {
+      output.push(0x1d, 0x6b, 0x45, 0x07, ...encoder.encode(barcode.slice(0, 7)), 0x0a);
+    } else {
+      output.push(0x1d, 0x6b, 0x49, 0x42, ...encoder.encode(barcode), 0x00);
+    }
+    output.push(0x0a, 0x0a);
     if (index === labels.length - 1) output.push(0x1d, 0x56, 0x00);
   });
   return new Uint8Array(output);
@@ -186,6 +243,12 @@ module.exports = {
   LABEL_SIZES,
   buildBarcodeLabels,
   getCode128Modules,
+  getBarcodeModules,
+  getEan8Modules,
   getEan13Modules,
+  isValidEan8,
   isValidEan13,
+  isValidRetailBarcode,
+  isValidUpcA,
+  retailBarcodeWarning,
 };

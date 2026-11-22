@@ -50,7 +50,7 @@ describe('Mongoose models', () => {
     expect(category.commissionEnabled).toBe(false);
   });
 
-  it('generates a valid EAN-13 barcode and enforces uniqueness', async () => {
+  it('generates an internal barcode and declares uniqueness per vendor', async () => {
     const product = new models.Product({
       name: 'Rice',
       categoryId: objectId(),
@@ -62,17 +62,18 @@ describe('Mongoose models', () => {
 
     await product.validate();
 
-    expect(product.barcode).toMatch(/^\d{13}$/);
-    const weightedBody = [...product.barcode.slice(0, 12)].reduce((sum, digit, index) => (
-      sum + Number(digit) * (index % 2 === 0 ? 1 : 3)
-    ), 0);
-    expect((weightedBody + Number(product.barcode[12])) % 10).toBe(0);
+    expect(product.barcode).toMatch(/^PB-[A-F0-9]{16}$/);
+    expect(product.barcodeSource).toBe('internal');
+    expect(product.productGroupId).toEqual(product._id);
     expect(models.Product.schema.indexes().some(([fields, options]) => (
-      fields.barcode === 1 && options.unique
+      fields.ownerType === 1
+      && fields.vendorId === 1
+      && fields.barcodeKeys === 1
+      && options.unique
     ))).toBe(true);
   });
 
-  it('rejects barcodes with an invalid EAN-13 check digit', async () => {
+  it('allows manufacturer barcodes with invalid check digits for warning-only UI validation', async () => {
     const product = new models.Product({
       name: 'Rice',
       categoryId: objectId(),
@@ -83,9 +84,8 @@ describe('Mongoose models', () => {
       barcode: '4006381333932',
     });
 
-    await expect(product.validate()).rejects.toMatchObject({
-      errors: { barcode: expect.objectContaining({ message: 'Barcode must be a valid EAN-13 number' }) },
-    });
+    await expect(product.validate()).resolves.toBeUndefined();
+    expect(product.barcodeSource).toBe('manufacturer');
   });
 
   it('requires a reason for stock adjustments', async () => {
@@ -157,7 +157,7 @@ describe('Mongoose models', () => {
   it('declares requested product lookup indexes', () => {
     const indexes = models.Product.schema.indexes().map(([fields]) => fields);
 
-    expect(indexes).toContainEqual({ barcode: 1 });
+    expect(indexes).toContainEqual({ ownerType: 1, vendorId: 1, barcodeKeys: 1 });
     expect(indexes).toContainEqual({ vendorId: 1 });
     expect(indexes).toContainEqual({ createdAt: 1 });
     expect(models.Product.schema.path('sku')).toBeDefined();

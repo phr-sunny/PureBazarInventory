@@ -72,12 +72,13 @@ export default function WarehousePage() {
   const visibleStock = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return stock;
-    return stock.filter((item) => `${item.productName} ${item.barcode}`.toLowerCase().includes(query));
+    return stock.filter((item) => `${item.productName} ${item.barcode} ${(item.barcodes || []).join(' ')}`.toLowerCase().includes(query));
   }, [search, stock]);
 
   const columns = [
     { key: 'productName', label: 'Product' },
     { key: 'barcode', label: 'Barcode' },
+    { key: 'vendorName', label: 'Vendor', render: (name) => name ? <Badge tone="info">{name}</Badge> : '—' },
     {
       key: 'ownerType',
       label: 'Owner',

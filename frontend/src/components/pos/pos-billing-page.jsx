@@ -141,12 +141,40 @@ export default function PosBillingPage() {
         unitsPerPackage: product.unitsPerPackage,
         packageUnitName: product.packageUnitName,
         subUnitPrice: product.subUnitPrice,
+        vendorId: product.vendorId,
+        vendorName: product.vendorName,
+        vendorPrice: Number(product.vendorPrice),
+        vendorMatches: product.vendorMatches || [],
         unit: 'PACKAGE',
         stock,
         quantity: isGram(product.packageUnitName) ? Math.max(1, Math.min(1000, Math.floor(stock))) : 1,
       }];
     });
   }, [showToast]);
+
+  function changeVendor(productId, candidate) {
+    setItems((current) => current.map((item) => {
+      if (item.productId !== productId) return item;
+      const stock = Number(candidate.stock) || 0;
+      return {
+        ...item,
+        productId: String(candidate.productId),
+        name: productLabel(candidate),
+        barcode: candidate.barcode,
+        mrp: Number(candidate.mrp),
+        unitValue: candidate.unitValue,
+        unitsPerPackage: candidate.unitsPerPackage,
+        packageUnitName: candidate.packageUnitName,
+        subUnitPrice: candidate.subUnitPrice,
+        vendorId: candidate.vendorId,
+        vendorName: candidate.vendorName,
+        vendorPrice: Number(candidate.vendorPrice),
+        stock,
+        quantity: Math.max(1, Math.min(Number(item.quantity), stock)),
+        vendorMatches: item.vendorMatches,
+      };
+    }));
+  }
 
   function updateQuantity(productId, value) {
     const target = items.find((item) => item.productId === productId);
@@ -323,6 +351,7 @@ export default function PosBillingPage() {
               onUnit={updateUnit}
               onRemove={(id) => setItems((current) => current.filter((item) => item.productId !== id))}
               onDiscount={updateItemDiscount}
+              onVendorChange={changeVendor}
             />
             <PaymentPanel
               methods={selectedMethods}

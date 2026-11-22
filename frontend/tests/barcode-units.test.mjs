@@ -4,7 +4,10 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { getUnitOptions } = require('../src/services/barcodeUnits.js');
-const { buildBarcodeLabels } = require('../src/services/barcodeEngine.js');
+const { addReceiveProductLine } = require('../src/services/goods-receive-utils.cjs');
+const {
+  buildBarcodeLabels, isValidEan8, isValidUpcA, retailBarcodeWarning,
+} = require('../src/services/barcodeEngine.js');
 
 const product = {
   name: 'Basmati Rice', barcode: '4006381333931', mrp: 500, unitValue: 5,
@@ -41,4 +44,33 @@ test('dropdown includes universal units without rescaling price', () => {
   for (const n of ['Box', 'Pcs', 'Pack', 'Kg', 'Gram', 'Liter']) assert.ok(names.includes(n), n);
   const box = getUnitOptions(product).find((o) => o.name === 'Box');
   assert.equal(box.price, 500);
+});
+
+test('validates EAN-8 and UPC-A check digits without blocking label output', () => {
+  assert.equal(isValidEan8('96385074'), true);
+  assert.equal(isValidUpcA('036000291452'), true);
+  assert.match(retailBarcodeWarning('036000291453'), /UPC-A check digit is invalid/);
+  assert.equal(buildBarcodeLabels([{ ...product, barcode: 'PB-0123ABCDE', price: 500 }]).labels[0].barcode, 'PB-0123ABCDE');
+});
+
+test('adding a GRN vendor copy creates a line for that newly copied product', () => {
+  const copiedProduct = {
+    id: 'vendor-copy-id',
+    name: 'Tea',
+    displayName: 'Tea [Box]',
+    barcode: 'PB-TEA',
+    vendorName: 'Current vendor',
+    packageUnitName: 'Box',
+  };
+  const lines = addReceiveProductLine([], copiedProduct);
+  assert.deepEqual(lines[0], {
+    productId: 'vendor-copy-id',
+    productName: 'Tea [Box]',
+    barcode: 'PB-TEA',
+    vendorName: 'Current vendor',
+    isWeightBased: false,
+    receivedQuantity: 1,
+    acceptedQuantity: 1,
+    rejectedQuantity: 0,
+  });
 });
