@@ -14,6 +14,7 @@ const settingsSchema = new mongoose.Schema({
   centralWarehouseLowStockEnabled: { type: Boolean, default: false },
   dailySalesTarget: { type: Number, min: 0, default: 0 },
   lateGraceMinutes: { type: Number, min: 0, default: 10 },
+  showPricesOnChallan: { type: Boolean, default: false },
   vatEnabled: { type: Boolean, default: false },
   defaultVatRate: { type: Number, min: 0, max: 100, default: 0 },
   vatPriceMode: { type: String, enum: ['INCLUDED', 'EXCLUDED'], default: 'EXCLUDED' },

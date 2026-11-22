@@ -13,6 +13,15 @@ export const getStockTransfers = (token, selectedOutletId) => api.get('/stock-tr
   params: selectedOutletId && selectedOutletId !== 'all' ? { selectedOutletId } : undefined,
 });
 export const createStockTransfer = (token, payload) => api.post('/stock-transfers', payload, authConfig(token));
+export const getPrintableStockTransferChallan = (token, id) => api.get(
+  `/stock-transfers/${id}/challan`,
+  authConfig(token),
+);
+export const printStockTransferChallan = (token, id) => api.post(
+  `/stock-transfers/${id}/challan/print`,
+  {},
+  authConfig(token),
+);
 export const dispatchStockTransfer = (token, id, payload) => api.post(`/stock-transfers/${id}/dispatch`, payload, authConfig(token));
 export const receiveStockTransfer = (token, id, payload) => api.post(`/stock-transfers/${id}/receive`, payload, authConfig(token));
 export const getWarehouseStock = (token, warehouseId) => api.get('/stock', {

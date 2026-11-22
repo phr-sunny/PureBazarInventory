@@ -13,6 +13,19 @@ const EAN_RIGHT = [
   '1001110', '1010000', '1000100', '1001000', '1110100',
 ];
 const EAN_PARITY = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+const CODE128_PATTERNS = [
+  '212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213',
+  '221312', '231212', '112232', '122132', '122231', '113222', '123122', '123221', '223211', '221132',
+  '221231', '213212', '223112', '312131', '311222', '321122', '321221', '312212', '322112', '322211',
+  '212123', '212321', '232121', '111323', '131123', '131321', '112313', '132113', '132311', '211313',
+  '231113', '231311', '112133', '112331', '132131', '113123', '113321', '133121', '313121', '211331',
+  '231131', '213113', '213311', '213131', '311123', '311321', '331121', '312113', '312311', '332111',
+  '314111', '221411', '431111', '111224', '111422', '121124', '121421', '141122', '141221', '112214',
+  '112412', '122114', '122411', '142112', '142211', '241211', '221114', '413111', '241112', '134111',
+  '111242', '121142', '121241', '114212', '124112', '124211', '411212', '421112', '421211', '212141',
+  '214121', '412121', '111143', '111341', '131141', '114113', '114311', '411113', '411311', '113141',
+  '114131', '311141', '411131', '211412', '211214', '211232', '2331112',
+];
 
 function isValidEan13(value) {
   if (!/^\d{13}$/.test(String(value || ''))) return false;
@@ -32,6 +45,25 @@ function getEan13Modules(barcode) {
   )).join('');
   const right = digits.slice(7).map((digit) => EAN_RIGHT[digit]).join('');
   return `101${middle}01010${right}101`.split('').map((module) => module === '1');
+}
+
+function getCode128Modules(value) {
+  const text = String(value || '');
+  if (!text || !/^[\x20-\x7E]+$/.test(text)) {
+    throw new Error('Code 128 requires non-empty printable ASCII text.');
+  }
+  const codes = [104, ...Array.from(text, (character) => character.charCodeAt(0) - 32)];
+  const checksum = codes.reduce((sum, code, index) => sum + (index ? code * index : code), 0) % 103;
+  codes.push(checksum, 106);
+  const modules = [];
+  codes.forEach((code) => {
+    let isBar = true;
+    for (const width of CODE128_PATTERNS[code]) {
+      for (let index = 0; index < Number(width); index += 1) modules.push(isBar);
+      isBar = !isBar;
+    }
+  });
+  return modules;
 }
 
 function safeText(value) {
@@ -148,4 +180,12 @@ function buildBarcodeLabels(items, labelType = 'price', sizeKey = DEFAULT_LABEL_
   return { labels, size, tspl: buildTspl(labels, size), escPos: buildEscPos(labels) };
 }
 
-module.exports = { BRAND_NAME, DEFAULT_LABEL_SIZE, LABEL_SIZES, buildBarcodeLabels, getEan13Modules, isValidEan13 };
+module.exports = {
+  BRAND_NAME,
+  DEFAULT_LABEL_SIZE,
+  LABEL_SIZES,
+  buildBarcodeLabels,
+  getCode128Modules,
+  getEan13Modules,
+  isValidEan13,
+};

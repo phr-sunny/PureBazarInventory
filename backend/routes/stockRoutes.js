@@ -4,6 +4,7 @@ const goodsReceiveController = require('../controllers/goodsReceiveController');
 const locationRoutes = require('./locationRoutes');
 const stockController = require('../controllers/stockController');
 const stockTransferController = require('../controllers/stockTransferController');
+const stockTransferChallanController = require('../controllers/stockTransferChallanController');
 const stockAdjustmentController = require('../controllers/stockAdjustmentController');
 const stockCountController = require('../controllers/stockCountController');
 const authMiddleware = require('../middlewares/authMiddleware');
@@ -137,6 +138,14 @@ router.get('/stock-transfers/:id', [
   authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
   transferId,
 ], validateRequest, stockTransferController.getTransfer);
+router.get('/stock-transfers/:id/challan', [
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
+  transferId,
+], validateRequest, stockTransferChallanController.getTransferChallan);
+router.post('/stock-transfers/:id/challan/print', [
+  authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:read'] }),
+  transferId,
+], validateRequest, stockTransferChallanController.printTransferChallan);
 router.post('/stock-transfers/:id/dispatch', [
   authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:write'] }),
   transferId,
@@ -144,6 +153,14 @@ router.post('/stock-transfers/:id/dispatch', [
   transferProduct,
   body('lines.*.dispatchedQuantity').isFloat({ min: 0 }).toFloat()
     .withMessage('Dispatched quantity must be zero or greater'),
+  body('carrierName').isString().trim().isLength({ min: 1, max: 120 })
+    .withMessage('Carrier name is required and must be at most 120 characters'),
+  body('carrierPhone').isString().trim().isLength({ min: 1, max: 40 })
+    .withMessage('Carrier phone is required and must be at most 40 characters'),
+  body('vehicle').optional({ values: 'falsy' }).isString().trim().isLength({ max: 120 })
+    .withMessage('Vehicle must be at most 120 characters'),
+  body('notes').optional({ values: 'falsy' }).isString().trim().isLength({ max: 500 })
+    .withMessage('Notes must be at most 500 characters'),
 ], validateRequest, stockTransferController.dispatchTransfer);
 router.post('/stock-transfers/:id/receive', [
   authMiddleware, enforceLocationScope, authorizeMiddleware({ permissions: ['stock:transfer:receive'] }),

@@ -9,6 +9,7 @@ jest.mock('../models', () => ({
       shareholderDiscountPercent: 5,
       stockAdjustmentApprovalLimit: 0,
       lateGraceMinutes: 10,
+      showPricesOnChallan: false,
       vatEnabled: false,
       defaultVatRate: 0,
       vatPriceMode: 'EXCLUDED',
@@ -59,6 +60,7 @@ function settingsDocument(fields = {}) {
     shareholderDiscountPercent: 5,
     stockAdjustmentApprovalLimit: 0,
     lateGraceMinutes: 10,
+    showPricesOnChallan: false,
     vatEnabled: false,
     defaultVatRate: 0,
     vatPriceMode: 'EXCLUDED',
@@ -146,6 +148,7 @@ describe('settings and audit endpoints', () => {
       shareholderDiscountPercent: 5,
       stockAdjustmentApprovalLimit: 0,
       lateGraceMinutes: 10,
+      showPricesOnChallan: false,
       vatEnabled: false,
       commissionEnabled: false,
       vendorWalletPayoutEnabled: false,
@@ -218,6 +221,27 @@ describe('settings and audit endpoints', () => {
     expect(Settings.findOneAndUpdate).toHaveBeenCalledWith(
       { singleton: 'global' },
       { $set: { lateGraceMinutes: 15 } },
+      expect.objectContaining({ runValidators: true }),
+    );
+    expect(invalid.status).toBe(400);
+  });
+
+  it('defaults challan prices to hidden and saves the visibility setting', async () => {
+    Settings.findOne.mockReturnValue(chain(null));
+    const defaults = await request(app).get('/api/settings').set(auth);
+    const updatedSettings = settingsDocument({ showPricesOnChallan: true });
+    Settings.findOneAndUpdate.mockResolvedValue(updatedSettings);
+    const updated = await request(app).put('/api/settings').set(auth)
+      .send({ showPricesOnChallan: true });
+    const invalid = await request(app).put('/api/settings').set(auth)
+      .send({ showPricesOnChallan: 'yes' });
+
+    expect(defaults.body.settings.showPricesOnChallan).toBe(false);
+    expect(updated.status).toBe(200);
+    expect(updated.body.settings.showPricesOnChallan).toBe(true);
+    expect(Settings.findOneAndUpdate).toHaveBeenCalledWith(
+      { singleton: 'global' },
+      { $set: { showPricesOnChallan: true } },
       expect.objectContaining({ runValidators: true }),
     );
     expect(invalid.status).toBe(400);

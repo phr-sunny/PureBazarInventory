@@ -168,6 +168,14 @@ export default function SettingsForm() {
         />
       </SettingsSection>
 
+      <SettingsSection title="Transfer challan" description="Configure whether transfer challans include product prices.">
+        <ToggleField
+          label="Show prices on challan"
+          checked={Boolean(settings.showPricesOnChallan)}
+          onChange={(event) => setField('showPricesOnChallan', event.target.checked)}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Low stock alerts" description="Outlets warn only when stock falls below this minimum (in main units, e.g. boxes).       Central Warehouse is checked only when enabled below.">
         <Input
           label="Low stock alert threshold"

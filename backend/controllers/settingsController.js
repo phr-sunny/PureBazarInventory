@@ -10,6 +10,7 @@ const settingsInputSchema = Joi.object({
   centralWarehouseLowStockEnabled: Joi.boolean(),
   dailySalesTarget: Joi.number().min(0).precision(2),
   lateGraceMinutes: Joi.number().integer().min(0),
+  showPricesOnChallan: Joi.boolean(),
   vatEnabled: Joi.boolean(),
   defaultVatRate: Joi.number().min(0).max(100),
   vatPriceMode: Joi.string().valid('INCLUDED', 'EXCLUDED'),
@@ -50,6 +51,7 @@ function settingsResponse(settings) {
         : settings.discountLimitByRole || {},
     };
   if (result.lateGraceMinutes == null) result.lateGraceMinutes = 10;
+  if (result.showPricesOnChallan == null) result.showPricesOnChallan = false;
   delete result.singleton;
   return result;
 }
