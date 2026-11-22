@@ -23,7 +23,7 @@ export default function ProductBarcodeFields({
     if (!scanned) return;
     onChange({
       barcode: scanned,
-      barcodeSource: scanned.startsWith('PB-') ? 'internal' : 'manufacturer',
+      barcodeSource: scanned.startsWith('PB') ? 'internal' : 'manufacturer',
     });
     setLookupError('');
     try {
@@ -48,7 +48,7 @@ export default function ProductBarcodeFields({
             const value = event.target.value;
             onChange({
               barcode: value,
-              barcodeSource: value ? (value.startsWith('PB-') ? 'internal' : 'manufacturer') : 'internal',
+              barcodeSource: value ? (value.startsWith('PB') ? 'internal' : 'manufacturer') : 'internal',
             });
             setMatches([]);
             setLookupError('');
@@ -74,17 +74,17 @@ export default function ProductBarcodeFields({
           <ScanLine size={16} /> Scan
         </Button>
       </div>
-      <p className="hidden text-xs text-slate-500 lg:block">On desktop, click Scan and use a USB scanner. On phones and tablets, use the camera button.</p>
+      {/* <p className="hidden text-xs text-slate-500 lg:block">On desktop, click Scan and use a USB scanner. On phones and tablets, use the camera button.</p>
       {barcodeSource && <p className="text-xs text-slate-500">Barcode source: {barcodeSource}</p>}
-      {warning && <p role="status" className="text-xs text-amber-800">{warning} You can still save this code.</p>}
-      <label className="block text-sm font-medium text-slate-700" htmlFor="extra-barcodes">Extra barcodes</label>
+      {warning && <p role="status" className="text-xs text-amber-800">{warning} You can still save this code.</p>} */}
+      {/* <label className="block text-sm font-medium text-slate-700" htmlFor="extra-barcodes">Extra barcodes</label>
       <textarea
         id="extra-barcodes"
         className="ui-input min-h-20 w-full"
         value={barcodes}
         onChange={(event) => onChange({ barcodes: event.target.value })}
         placeholder="One barcode per line (for example, box and piece codes)"
-      />
+      /> */}
       {extraWarnings.map((message, index) => (
         <p key={`${index}-${message}`} role="status" className="text-xs text-amber-800">{message} This extra code can still be saved.</p>
       ))}
