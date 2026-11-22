@@ -15,7 +15,7 @@ const isWeightItem = (item) => !isPiece(item) && isGram(item.packageUnitName);
 const money = (value) => (Number(value) || 0).toFixed(2);
 
 export default function CartPanel({
-  items, onQuantity, onUnit, onRemove, onDiscount, onVendorChange,
+  items, onQuantity, onUnit, onRemove, onDiscount, onVendorChange, offline = false,
 }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -33,7 +33,7 @@ export default function CartPanel({
                 <div className="min-w-0">
                   <h3 className="truncate font-medium text-slate-900">{item.name}</h3>
                   {item.vendorName && <p className="text-xs font-medium text-indigo-700">Vendor: {item.vendorName}</p>}
-                  <p className="text-xs text-slate-500">{item.barcode} · ৳{money(unitPrice(item))} per {isPiece(item) ? 'pc' : item.packageUnitName || 'box'} · {!isPiece(item) && isGram(item.packageUnitName) ? formatStockDisplay(availableStock(item), item.packageUnitName) : `${availableStock(item)} ${isPiece(item) ? 'pcs' : item.packageUnitName || 'boxes'}`} in stock</p>
+                  <p className="text-xs text-slate-500">{item.barcode} · ৳{money(unitPrice(item))} per {isPiece(item) ? 'pc' : item.packageUnitName || 'box'} · {offline ? 'Cached stock: ' : ''}{!isPiece(item) && isGram(item.packageUnitName) ? formatStockDisplay(availableStock(item), item.packageUnitName) : `${availableStock(item)} ${isPiece(item) ? 'pcs' : item.packageUnitName || 'boxes'}`}{offline ? '' : ' in stock'}</p>
                   {item.vendorMatches?.length > 1 && (
                     <Select
                       label="Change vendor"
@@ -45,7 +45,7 @@ export default function CartPanel({
                       className="mt-2 max-w-sm"
                     >
                       {item.vendorMatches.map((match) => (
-                        <option key={match.productId} value={match.productId} disabled={match.stock <= 0 && String(match.productId) !== item.productId}>
+                        <option key={match.productId} value={match.productId} disabled={!offline && match.stock <= 0 && String(match.productId) !== item.productId}>
                           {match.vendorName || 'Company'} — {match.stock > 0 ? `${match.stock} in stock` : 'out of stock'}
                         </option>
                       ))}
@@ -83,7 +83,7 @@ export default function CartPanel({
                     label="Qty"
                     type="number"
                     min="1"
-                    max={availableStock(item)}
+                    max={offline ? undefined : availableStock(item)}
                     step="1"
                     value={item.quantity}
                     onChange={(event) => onQuantity(item.productId, event.target.value)}
@@ -94,7 +94,7 @@ export default function CartPanel({
                     className="rounded border border-slate-300 p-2 disabled:opacity-40"
                     aria-label={`Increase ${item.name} quantity`}
                     onClick={() => onQuantity(item.productId, Number(item.quantity) + 1)}
-                    disabled={Number(item.quantity) >= availableStock(item)}
+                    disabled={!offline && Number(item.quantity) >= availableStock(item)}
                   >
                     <Plus size={14} />
                   </button>

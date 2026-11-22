@@ -23,7 +23,7 @@ function getActiveHref(pathname) {
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 }
 
-export default function Sidebar({ open, onClose }) {
+export default function Sidebar({ open, onClose, posLocked = false }) {
   const pathname = usePathname();
   const { canAccess } = useAuth();
   const { t } = useLanguage();
@@ -56,7 +56,7 @@ export default function Sidebar({ open, onClose }) {
         aria-label={t("Main navigation")}
       >
         <div className="sidebar-brand">
-          <Link href="/dashboard" className="brand-link" onClick={onClose}>
+          <Link href={posLocked ? '/orders/pos' : '/dashboard'} className="brand-link" onClick={onClose}>
             <img
               src="/logo.png"
               alt="PureBazar Logo"
@@ -75,6 +75,7 @@ export default function Sidebar({ open, onClose }) {
         <nav className="sidebar-nav">
           {navigationItems.map((item) => {
             const { label, href, icon: Icon, children } = item;
+            if (posLocked && label !== 'Sales & POS') return null;
             if (!children) {
               if (!canSee(item)) return null;
               const active = activeHref === href;
@@ -91,7 +92,8 @@ export default function Sidebar({ open, onClose }) {
                 </Link>
               );
             }
-            const visibleChildren = children.filter((child) => canSee(child));
+            const visibleChildren = children.filter((child) => canSee(child)
+              && (!posLocked || ['/orders/pos', '/orders/shifts'].includes(child.href)));
             if (!visibleChildren.length) return null;
             const expanded = openGroup === label;
             const groupActive = activeGroup === label;

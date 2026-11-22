@@ -740,3 +740,8 @@
 	- Files: Shared `vendor-autocomplete.jsx` used by Add New Product and the Add vendor copy modal; product-group vendor-copy exclusions and focused frontend utility tests.
 	- Decisions: Add vendor copy keeps editable prefills for vendor price and MRP, excludes the source/current vendor and vendors already represented in the same product group, and reports a clear duplicate-vendor message. No billEngine or database migration changes.
 	- Validation: Frontend production build passes. Focused vendor-copy tests pass; the full frontend suite passes 33/34, with the remaining i18n failure limited to eight unrelated existing untranslated literals. No database migration was run.
+
+- [x] O Offline POS
+	- Files: POS service worker and app shell; IndexedDB catalog/offline bill queue; shared-engine offline billing and receipts; offline-session and POS-lock settings; idempotent backend sync, catalog snapshots, and sale-time cashier shift totals; focused backend and frontend tests.
+	- Decisions: Offline bills use client UUIDs, per-outlet reserved number ranges, and FIFO sync; sync retries return the existing order, while sold bills that overdraw stock are saved with review flags and matching stock/vendor ledger entries. Wallet/Probashi payments require connectivity; offline sessions cache no passwords and expire within the configured maximum of 24 hours. No database migration was run.
+	- Validation: Backend Jest passes (52 suites, 379 tests); frontend production build passes. Frontend tests pass 36/37; the remaining existing i18n assertion reports nine unrelated untranslated strings.

@@ -5,6 +5,7 @@ import StoreProvider from '@/store/provider';
 import AppToaster from '@/components/common/toaster';
 import { LanguageProvider } from '@/i18n/language-provider';
 import AppShell from '@/components/common/app-shell';
+import ServiceWorkerRegistration from '@/components/common/service-worker-registration';
 
 export const metadata = {
   title: 'PureBazar',
@@ -25,6 +26,7 @@ export default function RootLayout({ children }) {
       <body>
         <ThemeProvider>
           <StoreProvider><LanguageProvider>
+            <ServiceWorkerRegistration />
             <AppShell>{children}</AppShell>
             <AppToaster />
           </LanguageProvider></StoreProvider>

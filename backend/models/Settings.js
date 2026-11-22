@@ -23,6 +23,9 @@ const settingsSchema = new mongoose.Schema({
   enabledPaymentMethods: { type: [String], enum: ['Cash', 'Bank', 'bKash', 'Nagad', 'Card', 'Wallet'], default: ['Cash', 'Bank', 'bKash', 'Nagad'] },
   receiptLayout: { type: mongoose.Schema.Types.Mixed, default: {} },
   vendorTerms: { type: [vendorTermSchema], default: [] },
+  offlineSessionHours: { type: Number, min: 1, max: 24, default: 24 },
+  lockCashierToPos: { type: Boolean, default: false },
+  offlineNumberCounters: { type: Map, of: Number, default: {} },
   probashiStatus: { type: String, enum: ['NotConfigured', 'Active', 'Inactive'], default: 'NotConfigured' },
   vendorSettlementCyclePerMonth: { type: Number, enum: [1, 2], default: 1 },
   vendorPayoutCutoffDates: {

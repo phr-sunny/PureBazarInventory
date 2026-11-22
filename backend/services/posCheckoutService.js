@@ -32,10 +32,9 @@ function objectOf(value) {
   return value?.toObject ? value.toObject() : value;
 }
 
-function validatePayments(result) {
+function validatePayments(result, offline = false) {
   const payments = result.payments;
   if (result.wallet) {
-    // Full wallet payment always settles the discounted bill total.
     payments[0].amount = result.bill.grandTotal;
   }
   if (payments.some((payment) => !Number.isFinite(payment.amount) || payment.amount <= 0)) {
@@ -49,13 +48,12 @@ function validatePayments(result) {
     CASH: 'Cash', BKASH: 'bKash', NAGAD: 'Nagad', CARD: 'Card', WALLET: 'Wallet',
   };
   const enabled = result.settings.enabledPaymentMethods;
-  if (enabled && payments.some((payment) => !enabled.includes(allowed[payment.method]))) {
+  if (!offline && enabled && payments.some((payment) => !enabled.includes(allowed[payment.method]))) {
     throw statusError('A selected payment method is disabled in Settings', 400);
   }
 }
 
 async function checkWallet(result, userId) {
-  // Probashi verification is bypassed: without an attached member there is no balance to check.
   if (!result.wallet || !result.shareholder) return null;
   let balance;
   try {
@@ -77,17 +75,29 @@ async function checkWallet(result, userId) {
 async function existingOfflineOrder(offlineId) {
   return Order.findOne({ offlineId }).lean();
 }
-
 async function commitBill(req, res, next, offline) {
   let session;
   try {
     if (offline && !req.body.offlineId) throw statusError('offlineId is required for offline sync');
     if (!offline && req.body.offlineId) throw statusError('Use offline sync for queued bills');
+    if (offline && req.body.offlineNumber) {
+      const prefix = `OFF-${String(req.locationId).toUpperCase()}-`;
+      if (!req.body.offlineNumber.startsWith(prefix)
+        || !/^\d+$/.test(req.body.offlineNumber.slice(prefix.length))) {
+        throw statusError('Offline bill number does not match the active outlet');
+      }
+    }
     if (offline) {
       const existing = await existingOfflineOrder(req.body.offlineId);
       if (existing) {
         return res.json({
-          success: true, synced: true, duplicate: true, order: existing, receipt: receiptData(existing),
+          success: true,
+          synced: true,
+          duplicate: true,
+          flagged: Boolean(existing.reviewRequired),
+          reviewFlags: existing.reviewFlags || [],
+          order: existing,
+          receipt: receiptData(existing),
         });
       }
     }
@@ -96,7 +106,7 @@ async function commitBill(req, res, next, offline) {
     if (result.approvalRequired && !result.approvedBy) {
       throw statusError('Discount exceeds this role limit; Super Admin approval is required', 403);
     }
-    validatePayments(result);
+    validatePayments(result, offline);
     const sufficient = await checkWallet(result, req.user._id);
     if (sufficient === false) {
       const repriced = await loadBill({
@@ -115,8 +125,14 @@ async function commitBill(req, res, next, offline) {
     }
 
     const outletId = req.locationId;
-    const orderNumber = `POS-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const orderNumber = offline
+      ? (req.body.offlineNumber || `OFF-${String(outletId).toUpperCase()}-${Date.now()}`)
+      : `POS-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const saleDate = new Date(req.body.soldAt || Date.now());
+    const reviewFlags = [];
+    if (offline && result.approvalRequired && !result.approvedBy) {
+      reviewFlags.push('DISCOUNT_APPROVAL_REQUIRED');
+    }
     const unitLabels = await unitLabelMap(result.lines.map(({ product }) => product));
     session = await mongoose.startSession();
     let order;
@@ -138,7 +154,9 @@ async function commitBill(req, res, next, offline) {
       for (const [productId, quantity] of quantities) {
         // Tolerance absorbs floating point drift from fractional box deductions.
         const availableQuantity = available.get(productId) || 0;
-        if (availableQuantity + 1e-9 < quantity) {
+        if (availableQuantity + 1e-9 < quantity && offline) {
+          reviewFlags.push(`NEGATIVE_STOCK:${productId}`);
+        } else if (availableQuantity + 1e-9 < quantity) {
           const product = result.lines.find(({ item }) => item.productId === productId)?.product;
           const { packageUnitName } = displayFields(product, unitLabels);
           const availableText = formatAvailableStock(availableQuantity, product, packageUnitName);
@@ -150,7 +168,12 @@ async function commitBill(req, res, next, offline) {
       }
       const [created] = await Order.create([{
         orderNumber,
-        ...(offline ? { offlineId: req.body.offlineId, soldAt: saleDate } : {}),
+        ...(offline ? {
+          offlineId: req.body.offlineId,
+          soldAt: saleDate,
+          reviewRequired: reviewFlags.length > 0,
+          reviewFlags,
+        } : {}),
         channel: 'POS',
         lines: result.bill.ledgerLines.map((line, index) => {
           const { item, product, pricing } = result.lines[index];
@@ -254,7 +277,12 @@ async function commitBill(req, res, next, offline) {
     const output = objectOf(order);
     return res.status(offline ? 200 : 201).json({
       success: true,
-      ...(offline ? { synced: true, duplicate: false } : {}),
+      ...(offline ? {
+        synced: true,
+        duplicate: false,
+        flagged: reviewFlags.length > 0,
+        reviewFlags,
+      } : {}),
       order: output,
       receipt: receiptData(output),
     });
@@ -264,7 +292,13 @@ async function commitBill(req, res, next, offline) {
         const existing = await existingOfflineOrder(req.body.offlineId);
         if (existing) {
           return res.json({
-            success: true, synced: true, duplicate: true, order: existing, receipt: receiptData(existing),
+            success: true,
+            synced: true,
+            duplicate: true,
+            flagged: Boolean(existing.reviewRequired),
+            reviewFlags: existing.reviewFlags || [],
+            order: existing,
+            receipt: receiptData(existing),
           });
         }
       } catch (lookupError) {

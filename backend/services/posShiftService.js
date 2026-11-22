@@ -26,7 +26,16 @@ async function findPayments(shift, closedAt) {
     cashier: shift.cashierId,
     outlet: shift.outletId,
     paymentStatus: 'PAID',
-    createdAt: { $gte: shift.openedAt, $lte: closedAt },
+    $or: [
+      {
+        offlineId: { $exists: false },
+        createdAt: { $gte: shift.openedAt, $lte: closedAt },
+      },
+      {
+        offlineId: { $exists: true },
+        soldAt: { $gte: shift.openedAt, $lte: closedAt },
+      },
+    ],
   }).lean();
   const totals = new Map(PAYMENT_METHODS.map(([, code]) => [code, 0]));
   orders.forEach((order) => {

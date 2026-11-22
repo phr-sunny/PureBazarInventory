@@ -82,6 +82,7 @@ export default function ShiftClosePage() {
     try {
       const { data } = await getCurrentPosShift(selectedOutletId);
       setShift(data.shift);
+      window.dispatchEvent(new CustomEvent('purebazar:shift-state', { detail: true }));
       setReport(data.report);
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to load the current shift.');
@@ -143,6 +144,7 @@ export default function ShiftClosePage() {
       setClosedShift(data.shift);
       setClosedReport(data.report);
       setShift(null);
+      window.dispatchEvent(new CustomEvent('purebazar:shift-state', { detail: false }));
       setReport(null);
       setActualCash('');
       setNotice('Shift closed. Review the final tender reconciliation below.');

@@ -587,7 +587,8 @@ describe('POS checkout API', () => {
 
   it('syncs non-wallet offline bills idempotently and preserves the sale time', async () => {
     const body = {
-      offlineId: 'device-1-order-17',
+      offlineId: '31d03b03-95d2-4852-9c7d-899b8fa12217',
+      offlineNumber: 'OFF-65B000000000000000000003-17',
       soldAt: '2026-10-18T09:00:00.000Z',
       items: line(),
       payments: [{ method: 'BKASH', amount: 100 }],
@@ -607,6 +608,28 @@ describe('POS checkout API', () => {
     expect(new Date(first.body.receipt.soldAt).toISOString()).toBe(body.soldAt);
     expect(duplicate.body).toMatchObject({ synced: true, duplicate: true });
     expect(db.orders).toHaveLength(1);
+    expect(db.ledgers).toHaveLength(1);
+    expect(db.movements.filter((movement) => movement.type === 'SALE')).toHaveLength(1);
+  });
+
+  it('saves and flags an offline sale that makes outlet stock negative', async () => {
+    db.movements = [];
+    const response = await request(app).post('/api/pos/offline-sync').set(auth()).send({
+      offlineId: 'de973ce2-fc6e-4e16-a282-487fc0a1a0cf',
+      offlineNumber: 'OFF-65B000000000000000000003-18',
+      soldAt: '2026-10-18T09:10:00.000Z',
+      items: line(),
+      payments: [{ method: 'CASH', amount: 100 }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ synced: true, flagged: true });
+    expect(response.body.reviewFlags).toContain(`NEGATIVE_STOCK:${productId}`);
+    expect(db.orders[0]).toMatchObject({ reviewRequired: true });
+    expect(db.movements).toEqual([expect.objectContaining({ type: 'SALE', quantity: -1 })]);
+    expect(db.ledgers).toEqual([expect.objectContaining({
+      vendorId, entryType: 'SALE', quantity: 1, vendorPayable: 60, locationId: outletId,
+    })]);
   });
 
   describe('piece selling from box stock', () => {

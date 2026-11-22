@@ -1,5 +1,22 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import api, { setAuthToken } from '@/services/api';
+import {
+  offlineSessionExpiresAt, offlineSessionIsValid, tokenExpiresAt,
+} from '@/services/offline-session-utils.cjs';
+
+const OFFLINE_SESSION_KEY = 'purebazar.offlineSession';
+
+function readOfflineSession() {
+  try {
+    return JSON.parse(window.localStorage.getItem(OFFLINE_SESSION_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function writeOfflineSession(session) {
+  window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session));
+}
 
 const initialState = {
   user: null,
@@ -8,10 +25,13 @@ const initialState = {
   initialized: false,
   status: 'idle',
   error: null,
+  offlineSession: false,
+  offlineSessionExpiresAt: null,
 };
 
 export const restoreAuth = createAsyncThunk('auth/restore', async (_, { rejectWithValue }) => {
-  const token = window.sessionStorage.getItem('purebazar.authToken');
+  const cachedSession = readOfflineSession();
+  const token = window.sessionStorage.getItem('purebazar.authToken') || cachedSession?.token;
   if (!token) {
     setAuthToken(null);
     return null;
@@ -20,11 +40,43 @@ export const restoreAuth = createAsyncThunk('auth/restore', async (_, { rejectWi
   setAuthToken(token);
   try {
     const { data } = await api.get('/auth/me');
-    return { token, user: data.user };
+    const session = {
+      ...cachedSession,
+      token,
+      user: data.user,
+      loggedInAt: cachedSession?.loggedInAt || new Date().toISOString(),
+    };
+    if (!session.expiresAt) session.expiresAt = offlineSessionExpiresAt(session);
+    writeOfflineSession(session);
+    window.sessionStorage.setItem('purebazar.authToken', token);
+    window.dispatchEvent(new CustomEvent('purebazar:network-status', { detail: true }));
+    return {
+      token,
+      user: data.user,
+      offline: false,
+      offlineExpiresAt: offlineSessionExpiresAt(session),
+    };
   } catch (error) {
+    if (error.response?.status === 401) {
+      window.localStorage.removeItem(OFFLINE_SESSION_KEY);
+      window.sessionStorage.removeItem('purebazar.authToken');
+      setAuthToken(null);
+      return null;
+    }
+    if (!error.response) {
+      window.dispatchEvent(new CustomEvent('purebazar:network-status', { detail: false }));
+    }
+    if (!error.response && offlineSessionIsValid(cachedSession)) {
+      return {
+        token: cachedSession.token,
+        user: cachedSession.user,
+        offline: true,
+        offlineExpiresAt: offlineSessionExpiresAt(cachedSession),
+      };
+    }
     setAuthToken(null);
     window.sessionStorage.removeItem('purebazar.authToken');
-    if (error.response?.status === 401) return null;
+    window.localStorage.removeItem(OFFLINE_SESSION_KEY);
     return rejectWithValue(error.response?.data?.message || 'Unable to verify your session. Check your connection and try again.');
   }
 });
@@ -44,6 +96,12 @@ export const loginUser = createAsyncThunk('auth/login', async (credentials, { re
     const { data } = await api.post('/auth/login', credentials);
     setAuthToken(data.token);
     window.sessionStorage.setItem('purebazar.authToken', data.token);
+    writeOfflineSession({
+      token: data.token,
+      user: data.user,
+      loggedInAt: new Date().toISOString(),
+      expiresAt: tokenExpiresAt(data.token),
+    });
     return data;
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Unable to sign in. Check your connection and try again.');
@@ -55,6 +113,7 @@ export const logoutUser = createAsyncThunk('auth/logout', async (_, { getState, 
     const token = getState().auth.token;
     await api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${token}` } });
     setAuthToken(null);
+    window.localStorage.removeItem(OFFLINE_SESSION_KEY);
   } catch (error) {
     return rejectWithValue(error.response?.data?.message || 'Unable to sign out. Please try again.');
   }
@@ -67,6 +126,9 @@ const authSlice = createSlice({
     clearAuthError(state) {
       state.error = null;
       if (state.status === 'failed') state.status = 'idle';
+    },
+    offlineSessionExpired() {
+      return { ...initialState, initialized: true };
     },
   },
   extraReducers(builder) {
@@ -81,6 +143,8 @@ const authSlice = createSlice({
         state.user = action.payload?.user || null;
         state.token = action.payload?.token || null;
         state.isAuthenticated = Boolean(action.payload);
+        state.offlineSession = Boolean(action.payload?.offline);
+        state.offlineSessionExpiresAt = action.payload?.offlineExpiresAt || null;
       })
       .addCase(restoreAuth.rejected, (state, action) => {
         state.initialized = true;
@@ -88,11 +152,20 @@ const authSlice = createSlice({
         state.error = action.payload || action.error.message;
       })
       .addCase(refreshSession.fulfilled, (state, action) => {
-        if (state.isAuthenticated && action.payload) state.user = action.payload;
+        if (state.isAuthenticated && action.payload) {
+          state.user = action.payload;
+          const cachedSession = readOfflineSession();
+          if (cachedSession) writeOfflineSession({ ...cachedSession, user: action.payload });
+          state.offlineSession = false;
+          state.offlineSessionExpiresAt = cachedSession
+            ? offlineSessionExpiresAt({ ...cachedSession, user: action.payload })
+            : null;
+        }
       })
       .addCase(refreshSession.rejected, (state, action) => {
         if (action.payload === 401) {
           window.sessionStorage.removeItem('purebazar.authToken');
+          window.localStorage.removeItem(OFFLINE_SESSION_KEY);
           return { ...initialState, initialized: true };
         }
         return state;
@@ -108,6 +181,8 @@ const authSlice = createSlice({
         state.initialized = true;
         state.status = 'succeeded';
         state.error = null;
+        state.offlineSession = false;
+        state.offlineSessionExpiresAt = offlineSessionExpiresAt(readOfflineSession());
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.status = 'failed';
@@ -124,6 +199,13 @@ const authSlice = createSlice({
       });
   },
 });
+
+export const expireOfflineSession = () => (dispatch) => {
+  window.localStorage.removeItem(OFFLINE_SESSION_KEY);
+  window.sessionStorage.removeItem('purebazar.authToken');
+  setAuthToken(null);
+  dispatch(authSlice.actions.offlineSessionExpired());
+};
 
 export const { clearAuthError } = authSlice.actions;
 export default authSlice.reducer;

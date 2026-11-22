@@ -131,6 +131,21 @@ describe('settings and audit endpoints', () => {
     );
   });
 
+  it('saves the offline session duration and cashier POS lock policy', async () => {
+    const updated = settingsDocument({ offlineSessionHours: 12, lockCashierToPos: true });
+    Settings.findOneAndUpdate.mockResolvedValue(updated);
+    const response = await request(app).put('/api/settings').set(auth).send({
+      offlineSessionHours: 12,
+      lockCashierToPos: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.settings).toMatchObject({
+      offlineSessionHours: 12,
+      lockCashierToPos: true,
+    });
+  });
+
   it('returns defaults and protects settings from unauthenticated or non-admin access', async () => {
     Settings.findOne.mockReturnValue(chain(null));
     const defaults = await request(app).get('/api/settings').set(auth);

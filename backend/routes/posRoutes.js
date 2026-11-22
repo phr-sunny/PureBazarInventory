@@ -72,6 +72,7 @@ router.post('/:orderId/return', write, [
 router.get('/search', read, [
   query('q').isString().trim().isLength({ min: 1, max: 100 }),
 ], validateRequest, posController.searchItems);
+router.get('/catalog', read, posController.getCatalog);
 router.get('/scan/:barcode', read, [
   param('barcode').isString().trim().isLength({ min: 1, max: 100 }),
 ], validateRequest, posController.scanItem);

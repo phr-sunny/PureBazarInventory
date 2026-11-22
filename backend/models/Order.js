@@ -26,6 +26,8 @@ const orderSchema = new mongoose.Schema({
   orderNumber: { type: String, required: true, trim: true, unique: true },
   offlineId: { type: String, trim: true },
   soldAt: { type: Date },
+  reviewRequired: { type: Boolean, default: false },
+  reviewFlags: { type: [String], default: [] },
   channel: { type: String, enum: ['POS'], default: 'POS', required: true },
   lines: { type: [orderLineSchema], required: true, validate: (lines) => lines.length > 0 },
   subtotal: { type: Number, required: true, min: 0 },

@@ -34,6 +34,7 @@ const billSchema = Joi.object({
   discountApproved: Joi.boolean(),
   outletId: Joi.string().hex().length(24),
   offlineId: Joi.string().trim().min(1).max(120),
+  offlineNumber: Joi.string().trim().min(1).max(120),
   soldAt: Joi.date().iso(),
 }).unknown(false);
 

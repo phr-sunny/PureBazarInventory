@@ -203,6 +203,24 @@ export default function SettingsForm() {
         />
       </SettingsSection>
 
+      <SettingsSection title="Offline POS and cashier access" description="Set the maximum offline login window and optionally keep cashiers in POS modules.">
+        <Input
+          label="Offline session duration (hours, maximum 24)"
+          type="number"
+          min="1"
+          max="24"
+          step="1"
+          value={settings.offlineSessionHours}
+          onChange={(event) => setField('offlineSessionHours', Number(event.target.value))}
+        />
+        <ToggleField
+          label="Lock cashier to POS"
+          description="Users without other module permissions, and users with an open shift, are limited to POS and Cashier Shift."
+          checked={Boolean(settings.lockCashierToPos)}
+          onChange={(event) => setField('lockCashierToPos', event.target.checked)}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Payments and receipt" description="Choose accepted checkout methods and configure the receipt layout.">
         <MethodChoices label="Enabled payment methods" methods={paymentMethods} value={settings.enabledPaymentMethods} onChange={(value) => setField('enabledPaymentMethods', value)} />
         <ReceiptLayoutEditor value={settings.receiptLayout} onChange={(value) => setField('receiptLayout', value)} />

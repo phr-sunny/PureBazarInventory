@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 const {
-  Product, StockMovement, Vendor,
+  Category, Location, Product, Settings, StockMovement, Vendor,
 } = require('../models');
 const { statusError } = require('./posBillService');
 const { effectiveSubUnitPrice } = require('../utils/piecePricing');
 const { unitLabelMap, displayFields } = require('../utils/productDisplay');
 const { barcodeMatches } = require('../utils/productBarcodes');
+
+const OFFLINE_NUMBER_BLOCK_SIZE = 1000;
 
 function fifoStock(movements, productIds) {
   const result = new Map(productIds.map((id) => [String(id), { stock: 0, receivedAt: null }]));
@@ -92,6 +94,7 @@ function toItem(product, stock, labels = new Map(), vendors = new Map()) {
     barcodes: product.barcodes || [],
     barcodeSource: product.barcodeSource,
     productGroupId: product.productGroupId,
+    ownerType: product.ownerType,
     vendorId: product.vendorId?.toString() || null,
     vendorName: vendors.get(product.vendorId?.toString()) || null,
     mrp: product.mrp,
@@ -101,7 +104,65 @@ function toItem(product, stock, labels = new Map(), vendors = new Map()) {
     unitsPerPackage: product.unitsPerPackage,
     stock: stockInfo.stock,
     receivedAt: stockInfo.receivedAt,
+    vatApplicable: product.vatApplicable,
+    vatRate: product.vatRate,
+    categoryId: product.categoryId?.toString() || null,
   };
+}
+
+async function reserveOfflineNumberBlock(outletId) {
+  const key = String(outletId);
+  const updated = await Settings.findOneAndUpdate(
+    { singleton: 'global' },
+    { $inc: { [`offlineNumberCounters.${key}`]: OFFLINE_NUMBER_BLOCK_SIZE } },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+  const counters = updated?.offlineNumberCounters;
+  const end = Number(counters?.get?.(key) ?? counters?.[key]);
+  return { start: end - OFFLINE_NUMBER_BLOCK_SIZE + 1, end };
+}
+
+async function getCatalog(req, res, next) {
+  try {
+    const outletId = req.locationId;
+    const [products, settings, outlet] = await Promise.all([
+      Product.find({}).sort({ name: 1 }).lean(),
+      Settings.findOne({ singleton: 'global' }).lean(),
+      Location.findById(outletId).lean(),
+    ]);
+    const [stock, labels, vendors, range] = await Promise.all([
+      stockByProduct(outletId, products.map((product) => product._id)),
+      unitLabelMap(products),
+      vendorNameMap(products),
+      reserveOfflineNumberBlock(outletId),
+    ]);
+    const categoryIds = [...new Set(products.map((product) => product.categoryId?.toString()).filter(Boolean))];
+    const categories = categoryIds.length
+      ? await Category.find({ _id: { $in: categoryIds } }).select('_id vatRate').lean()
+      : [];
+    const vatByCategory = new Map(categories.map((category) => [category._id.toString(), category.vatRate]));
+    return res.json({
+      success: true,
+      outlet: { id: String(outletId), name: outlet?.name || '', code: String(outletId).toUpperCase() },
+      items: products.map((product) => ({
+        ...toItem(product, stock, labels, vendors),
+        categoryVatRate: vatByCategory.get(product.categoryId?.toString()),
+      })),
+      settings: {
+        vatEnabled: settings?.vatEnabled === true,
+        defaultVatRate: Number(settings?.defaultVatRate) || 0,
+        vatPriceMode: settings?.vatPriceMode || 'EXCLUDED',
+        vatCalculationOrder: settings?.vatCalculationOrder || 'DISCOUNT_THEN_VAT',
+        shareholderDiscountPercent: Number(settings?.shareholderDiscountPercent ?? 5),
+        discountLimitByRole: settings?.discountLimitByRole instanceof Map
+          ? Object.fromEntries(settings.discountLimitByRole)
+          : settings?.discountLimitByRole || {},
+      },
+      offlineNumberRange: range,
+    });
+  } catch (error) {
+    return next(error);
+  }
 }
 
 async function scanItem(req, res, next) {
@@ -155,5 +216,5 @@ async function searchItems(req, res, next) {
 }
 
 module.exports = {
-  fifoStock, scanItem, searchItems, sortByFifo, stockByProduct, toItem,
+  fifoStock, getCatalog, reserveOfflineNumberBlock, scanItem, searchItems, sortByFifo, stockByProduct, toItem,
 };
